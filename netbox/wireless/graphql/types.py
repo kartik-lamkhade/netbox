@@ -3,7 +3,9 @@ from typing import TYPE_CHECKING, Annotated
 import strawberry
 import strawberry_django
 
-from netbox.graphql.types import NestedGroupObjectType, PrimaryObjectType
+from dcim.models import Location, Region, Site, SiteGroup
+from netbox.graphql.optimization import build_gfk_prefetch
+from netbox.graphql.types import NestedLtreeGroupObjectType, PrimaryObjectType, register_type
 from wireless import models
 
 from .filters import *
@@ -20,20 +22,20 @@ __all__ = (
 )
 
 
-@strawberry_django.type(
+@register_type(
     models.WirelessLANGroup,
-    fields='__all__',
+    exclude=['path', 'sort_path'],
     filters=WirelessLANGroupFilter,
     pagination=True
 )
-class WirelessLANGroupType(NestedGroupObjectType):
+class WirelessLANGroupType(NestedLtreeGroupObjectType):
     parent: Annotated["WirelessLANGroupType", strawberry.lazy('wireless.graphql.types')] | None
 
     wireless_lans: list[Annotated["WirelessLANType", strawberry.lazy('wireless.graphql.types')]]
     children: list[Annotated["WirelessLANGroupType", strawberry.lazy('wireless.graphql.types')]]
 
 
-@strawberry_django.type(
+@register_type(
     models.WirelessLAN,
     exclude=['scope_type', 'scope_id', '_location', '_region', '_site', '_site_group'],
     filters=WirelessLANFilter,
@@ -46,7 +48,18 @@ class WirelessLANType(PrimaryObjectType):
 
     interfaces: list[Annotated["InterfaceType", strawberry.lazy('dcim.graphql.types')]]
 
-    @strawberry_django.field
+    @strawberry_django.field(
+        prefetch_related=build_gfk_prefetch(
+            'scope',
+            [
+                Region,
+                SiteGroup,
+                Site,
+                Location,
+            ],
+        ),
+        only=['scope_type', 'scope_id'],
+    )
     def scope(self) -> Annotated[
         Annotated['LocationType', strawberry.lazy('dcim.graphql.types')]
         | Annotated['RegionType', strawberry.lazy('dcim.graphql.types')]
@@ -57,7 +70,7 @@ class WirelessLANType(PrimaryObjectType):
         return self.scope
 
 
-@strawberry_django.type(
+@register_type(
     models.WirelessLink,
     fields='__all__',
     filters=WirelessLinkFilter,

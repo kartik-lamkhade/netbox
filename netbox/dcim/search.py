@@ -4,6 +4,17 @@ from . import models
 
 
 @register_search
+class CableBundleIndex(SearchIndex):
+    model = models.CableBundle
+    fields = (
+        ('name', 100),
+        ('description', 500),
+        ('comments', 5000),
+    )
+    display_attrs = ('description',)
+
+
+@register_search
 class CableIndex(SearchIndex):
     model = models.Cable
     fields = (
@@ -36,6 +47,50 @@ class ConsoleServerPortIndex(SearchIndex):
         ('speed', 2000),
     )
     display_attrs = ('device', 'label', 'type', 'description')
+
+
+@register_search
+class CoolingFeedIndex(SearchIndex):
+    model = models.CoolingFeed
+    fields = (
+        ('name', 100),
+        ('description', 500),
+        ('comments', 5000),
+    )
+    display_attrs = ('cooling_source', 'rack', 'status', 'description')
+
+
+@register_search
+class CoolingOutflowIndex(SearchIndex):
+    model = models.CoolingOutflow
+    fields = (
+        ('name', 100),
+        ('label', 200),
+        ('description', 500),
+    )
+    display_attrs = ('device', 'label', 'type', 'description')
+
+
+@register_search
+class CoolingIntakeIndex(SearchIndex):
+    model = models.CoolingIntake
+    fields = (
+        ('name', 100),
+        ('label', 200),
+        ('description', 500),
+    )
+    display_attrs = ('device', 'label', 'type', 'description')
+
+
+@register_search
+class CoolingSourceIndex(SearchIndex):
+    model = models.CoolingSource
+    fields = (
+        ('name', 100),
+        ('description', 500),
+        ('comments', 5000),
+    )
+    display_attrs = ('site', 'location', 'type', 'status', 'description')
 
 
 @register_search
@@ -73,6 +128,7 @@ class DeviceRoleIndex(SearchIndex):
         ('name', 100),
         ('slug', 110),
         ('description', 500),
+        ('comments', 5000),
     )
     display_attrs = ('description',)
 
@@ -106,6 +162,7 @@ class MACAddressIndex(SearchIndex):
     fields = (
         ('mac_address', 100),
         ('description', 500),
+        ('comments', 5000),
     )
     display_attrs = ('assigned_object', 'description')
 
@@ -199,6 +256,18 @@ class ModuleBayIndex(SearchIndex):
 
 
 @register_search
+class ModuleBayTypeIndex(SearchIndex):
+    model = models.ModuleBayType
+    fields = (
+        ('name', 100),
+        ('slug', 110),
+        ('description', 500),
+        ('comments', 5000),
+    )
+    display_attrs = ('name', 'manufacturer', 'description')
+
+
+@register_search
 class ModuleTypeProfileIndex(SearchIndex):
     model = models.ModuleTypeProfile
     fields = (
@@ -228,6 +297,7 @@ class PlatformIndex(SearchIndex):
         ('name', 100),
         ('slug', 110),
         ('description', 500),
+        ('comments', 5000),
     )
     display_attrs = ('manufacturer', 'description')
 
@@ -313,6 +383,18 @@ class RackReservationIndex(SearchIndex):
         ('comments', 5000),
     )
     display_attrs = ('rack', 'tenant', 'user', 'description')
+
+
+@register_search
+class RackGroupIndex(SearchIndex):
+    model = models.RackGroup
+    fields = (
+        ('name', 100),
+        ('slug', 110),
+        ('description', 500),
+        ('comments', 5000),
+    )
+    display_attrs = ('description',)
 
 
 @register_search

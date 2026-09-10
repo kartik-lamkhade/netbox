@@ -1,24 +1,26 @@
-from django.test import RequestFactory, TestCase, tag
-
-from users.models import Token
-from users.tables import TokenTable
+from users.tables import *
+from utilities.testing import TableTestCases
 
 
-class TokenTableTest(TestCase):
-    @tag('regression')
-    def test_every_orderable_field_does_not_throw_exception(self):
-        tokens = Token.objects.all()
-        disallowed = {'actions'}
+class TokenTableTestCase(TableTestCases.StandardTableTestCase):
+    table = TokenTable
 
-        orderable_columns = [
-            column.name for column in TokenTable(tokens).columns
-            if column.orderable and column.name not in disallowed
-        ]
-        fake_request = RequestFactory().get("/")
 
-        for col in orderable_columns:
-            for direction in ('-', ''):
-                with self.subTest(col=col, direction=direction):
-                    table = TokenTable(tokens)
-                    table.order_by = f'{direction}{col}'
-                    table.as_html(fake_request)
+class UserTableTestCase(TableTestCases.StandardTableTestCase):
+    table = UserTable
+
+
+class GroupTableTestCase(TableTestCases.StandardTableTestCase):
+    table = GroupTable
+
+
+class ObjectPermissionTableTestCase(TableTestCases.StandardTableTestCase):
+    table = ObjectPermissionTable
+
+
+class OwnerGroupTableTestCase(TableTestCases.StandardTableTestCase):
+    table = OwnerGroupTable
+
+
+class OwnerTableTestCase(TableTestCases.StandardTableTestCase):
+    table = OwnerTable

@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
@@ -7,14 +7,14 @@ from django.test import TestCase
 from dcim.models import Site
 from ipam.models import IPAddress
 from users.models import User
-from utilities.testing import BaseFilterSetTests, ChangeLoggedFilterSetTests
+from utilities.testing import BaseFilterSetTestMixin, ChangeLoggedFilterSetTestMixin
 
 from ..choices import *
 from ..filtersets import *
 from ..models import *
 
 
-class DataSourceTestCase(TestCase, ChangeLoggedFilterSetTests):
+class DataSourceTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = DataSource.objects.all()
     filterset = DataSourceFilterSet
     ignore_fields = ('ignore_rules', 'parameters')
@@ -82,7 +82,7 @@ class DataSourceTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DataFileTestCase(TestCase, ChangeLoggedFilterSetTests):
+class DataFileTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = DataFile.objects.all()
     filterset = DataFileFilterSet
     ignore_fields = ('data',)
@@ -148,7 +148,7 @@ class DataFileTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ObjectChangeTestCase(TestCase, BaseFilterSetTests):
+class ObjectChangeTestCase(TestCase, BaseFilterSetTestMixin):
     queryset = ObjectChange.objects.all()
     filterset = ObjectChangeFilterSet
     ignore_fields = ('message', 'prechange_data', 'postchange_data')
@@ -244,7 +244,69 @@ class ObjectChangeTestCase(TestCase, BaseFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
 
 
-class ObjectTypeTestCase(TestCase, BaseFilterSetTests):
+class JobTestCase(TestCase, BaseFilterSetTestMixin):
+    queryset = Job.objects.all()
+    filterset = JobFilterSet
+    ignore_fields = ('data', 'error', 'log_entries')
+
+    @classmethod
+    def setUpTestData(cls):
+        users = (
+            User(username='user1'),
+            User(username='user2'),
+            User(username='user3'),
+        )
+        User.objects.bulk_create(users)
+
+        jobs = (
+            Job(
+                name='Job 1', job_id=uuid.uuid4(), user=users[0],
+                notifications=JobNotificationChoices.NOTIFICATION_ALWAYS,
+                execution_time=timedelta(seconds=30),
+            ),
+            Job(
+                name='Job 2', job_id=uuid.uuid4(), user=users[0],
+                notifications=JobNotificationChoices.NOTIFICATION_ALWAYS,
+                execution_time=timedelta(seconds=60),
+            ),
+            Job(
+                name='Job 3', job_id=uuid.uuid4(), user=users[1],
+                notifications=JobNotificationChoices.NOTIFICATION_ON_FAILURE,
+                execution_time=timedelta(seconds=120),
+            ),
+            Job(
+                name='Job 4', job_id=uuid.uuid4(), user=users[2],
+                notifications=JobNotificationChoices.NOTIFICATION_NEVER,
+            ),
+        )
+        Job.objects.bulk_create(jobs)
+
+    def test_user(self):
+        """Filter Jobs by user (ID and username)."""
+        params = {'user_id': User.objects.filter(username__in=['user1', 'user2']).values_list('pk', flat=True)}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'user': ['user1', 'user2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+
+    def test_notifications(self):
+        """Filter Jobs by notification policy."""
+        params = {'notifications': [
+            JobNotificationChoices.NOTIFICATION_ALWAYS,
+            JobNotificationChoices.NOTIFICATION_ON_FAILURE,
+        ]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+
+    def test_execution_time(self):
+        """Filter Jobs by execution time (exact value and gte/lte range)."""
+        params = {'execution_time': timedelta(seconds=60)}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+        params = {'execution_time__gte': timedelta(seconds=60)}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'execution_time__lte': timedelta(seconds=60)}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class ObjectTypeTestCase(TestCase, BaseFilterSetTestMixin):
     queryset = ObjectType.objects.all()
     filterset = ObjectTypeFilterSet
     ignore_fields = (

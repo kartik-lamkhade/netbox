@@ -3,11 +3,11 @@ from typing import TYPE_CHECKING, Annotated
 import strawberry
 import strawberry_django
 from strawberry.scalars import ID
-from strawberry_django import BaseFilterLookup, FilterLookup
+from strawberry_django import BaseFilterLookup, StrFilterLookup
 
 from dcim.graphql.filter_mixins import ScopedFilterMixin
 from netbox.graphql.filter_mixins import DistanceFilterMixin
-from netbox.graphql.filters import NestedGroupModelFilter, PrimaryModelFilter
+from netbox.graphql.filters import NestedGroupModelFilter, PrimaryModelFilter, register_filter
 from tenancy.graphql.filter_mixins import TenancyFilterMixin
 from wireless import models
 
@@ -26,19 +26,19 @@ __all__ = (
 )
 
 
-@strawberry_django.filter_type(models.WirelessLANGroup, lookups=True)
+@register_filter(models.WirelessLANGroup, lookups=True)
 class WirelessLANGroupFilter(NestedGroupModelFilter):
     pass
 
 
-@strawberry_django.filter_type(models.WirelessLAN, lookups=True)
+@register_filter(models.WirelessLAN, lookups=True)
 class WirelessLANFilter(
     WirelessAuthenticationFilterMixin,
     ScopedFilterMixin,
     TenancyFilterMixin,
     PrimaryModelFilter
 ):
-    ssid: FilterLookup[str] | None = strawberry_django.filter_field()
+    ssid: StrFilterLookup | None = strawberry_django.filter_field()
     status: BaseFilterLookup[Annotated['WirelessLANStatusEnum', strawberry.lazy('wireless.graphql.enums')]] | None = (
         strawberry_django.filter_field()
     )
@@ -50,7 +50,7 @@ class WirelessLANFilter(
     vlan_id: ID | None = strawberry_django.filter_field()
 
 
-@strawberry_django.filter_type(models.WirelessLink, lookups=True)
+@register_filter(models.WirelessLink, lookups=True)
 class WirelessLinkFilter(
     WirelessAuthenticationFilterMixin,
     DistanceFilterMixin,
@@ -65,7 +65,7 @@ class WirelessLinkFilter(
         strawberry_django.filter_field()
     )
     interface_b_id: ID | None = strawberry_django.filter_field()
-    ssid: FilterLookup[str] | None = strawberry_django.filter_field()
+    ssid: StrFilterLookup | None = strawberry_django.filter_field()
     status: BaseFilterLookup[Annotated['WirelessLANStatusEnum', strawberry.lazy('wireless.graphql.enums')]] | None = (
         strawberry_django.filter_field()
     )

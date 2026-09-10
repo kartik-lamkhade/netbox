@@ -6,6 +6,8 @@ from django.contrib.auth.mixins import AccessMixin
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
 from django.http import HttpResponseForbidden
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
 from django.urls import reverse
 from django.urls.exceptions import NoReverseMatch
 from django.utils.translation import gettext_lazy as _
@@ -29,6 +31,8 @@ __all__ = (
     'TokenConditionalLoginRequiredMixin',
     'ViewTab',
     'get_action_url',
+    'get_default_template',
+    'get_view',
     'get_viewname',
     'register_model_view',
 )
@@ -335,6 +339,19 @@ def get_action_url(model, action=None, rest_api=False, kwargs=None):
     return reverse(get_viewname(model, action, rest_api), kwargs=kwargs)
 
 
+def get_default_template(model):
+    """
+    Return the base template for the given model. If the presumed "{app}/{model}.html" template
+    does not exist, fall back to "generic/object.html".
+    """
+    template_name = f'{model._meta.app_label}/{model._meta.model_name}.html'
+    try:
+        get_template(template_name)
+        return template_name
+    except TemplateDoesNotExist:
+        return 'generic/object.html'
+
+
 def register_model_view(model, name='', path=None, detail=True, kwargs=None):
     """
     This decorator can be used to "attach" a view to any model in NetBox. This is typically used to inject
@@ -373,3 +390,18 @@ def register_model_view(model, name='', path=None, detail=True, kwargs=None):
         return cls
 
     return _wrapper
+
+
+def get_view(model, name=''):
+    """
+    Return the view class registered for a model under the given name, or None if no matching view is registered.
+
+    Args:
+        model: A model class or instance whose registered view should be returned.
+        name: The name under which the view was registered (see `register_model_view()`). Defaults to the
+            model's base (detail) view.
+    """
+    app_label = model._meta.app_label
+    model_name = model._meta.model_name
+    views = registry['views'].get(app_label, {}).get(model_name, [])
+    return next((v['view'] for v in views if v['name'] == name), None)

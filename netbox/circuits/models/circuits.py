@@ -17,6 +17,8 @@ from netbox.models.features import (
     TagsMixin,
 )
 from netbox.models.mixins import DistanceMixin
+from utilities.data import normalize_update_fields
+from utilities.string import title
 
 from .base import BaseCircuitType
 
@@ -144,6 +146,9 @@ class Circuit(ContactsMixin, ImageAttachmentsMixin, DistanceMixin, PrimaryModel)
                 name='%(app_label)s_%(class)s_unique_provideraccount_cid'
             ),
         )
+        indexes = (
+            models.Index(fields=('provider', 'provider_account', 'cid')),  # Default ordering
+        )
         verbose_name = _('circuit')
         verbose_name_plural = _('circuits')
 
@@ -220,6 +225,9 @@ class CircuitGroupAssignment(CustomFieldsMixin, ExportTemplatesMixin, TagsMixin,
                 fields=('member_type', 'member_id', 'group'),
                 name='%(app_label)s_%(class)s_unique_member_group'
             ),
+        )
+        indexes = (
+            models.Index(fields=('group', 'member_type', 'member_id', 'priority', 'id')),  # Default ordering
         )
         verbose_name = _('Circuit group assignment')
         verbose_name_plural = _('Circuit group assignments')
@@ -347,6 +355,13 @@ class CircuitTermination(
         verbose_name = _('circuit termination')
         verbose_name_plural = _('circuit terminations')
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Cache original values to detect changes
+        self._orig_circuit_id = self.__dict__.get('circuit_id')
+        self._orig_term_side = self.__dict__.get('term_side')
+
     def __str__(self):
         return f'{self.circuit}: Termination {self.term_side}'
 
@@ -354,16 +369,51 @@ class CircuitTermination(
         return reverse('circuits:circuittermination', args=[self.pk])
 
     def clean(self):
+        if self.termination_type and not (self.termination or self.termination_id):
+            termination_type = self.termination_type.model_class()
+            raise ValidationError(
+                _("Please select a {termination_type}.").format(
+                    termination_type=_(title(termination_type._meta.verbose_name))
+                )
+            )
         super().clean()
 
         if self.termination is None:
             raise ValidationError(_("A circuit termination must attach to a terminating object."))
 
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        update_fields = normalize_update_fields(kwargs)
+
+        # Only consider circuit/term_side changes if those fields
+        # are actually being persisted
+        if update_fields is not None:
+            tracking_relevant = 'circuit' in update_fields or 'term_side' in update_fields
+        else:
+            tracking_relevant = True
+
+        circuit_changed = tracking_relevant and self._orig_circuit_id and self._orig_circuit_id != self.circuit_id
+        term_side_changed = tracking_relevant and self._orig_term_side and self._orig_term_side != self.term_side
+
         # Cache objects associated with the terminating object (for filtering)
         self.cache_related_objects()
 
         super().save(*args, **kwargs)
+
+        # Clear the old termination reference if circuit or term_side changed
+        if circuit_changed or term_side_changed:
+            old_termination_name = f'termination_{self._orig_term_side.lower()}'
+            Circuit.objects.filter(pk=self._orig_circuit_id).update(**{old_termination_name: None})
+
+        # Update the cache if this is a new termination or circuit/term_side changed
+        if is_new or circuit_changed or term_side_changed:
+            # Update the new circuit's termination reference
+            termination_name = f'termination_{self.term_side.lower()}'
+            Circuit.objects.filter(pk=self.circuit_id).update(**{termination_name: self.pk})
+
+            # Update cached values for subsequent saves
+            self._orig_circuit_id = self.circuit_id
+            self._orig_term_side = self.term_side
 
     def cache_related_objects(self):
         self._provider_network = self._region = self._site_group = self._site = self._location = None

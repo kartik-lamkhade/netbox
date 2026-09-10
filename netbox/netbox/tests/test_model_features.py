@@ -1,6 +1,8 @@
 from unittest import skipIf
 
+from django.apps import apps
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from taggit.models import Tag
 
@@ -8,7 +10,8 @@ from core.models import AutoSyncRecord, DataSource
 from dcim.models import Site
 from extras.models import CustomLink
 from ipam.models import Prefix
-from netbox.models.features import get_model_features, has_feature, model_is_public
+from netbox.constants import CORE_APPS
+from netbox.models.features import CloningMixin, get_model_features, has_feature, model_is_public
 
 
 class ModelFeaturesTestCase(TestCase):
@@ -62,52 +65,44 @@ class ModelFeaturesTestCase(TestCase):
         self.assertIn('cloning', features)
         self.assertNotIn('bookmarks', features)
 
-    def test_cloningmixin_injects_gfk_attribute(self):
+    def test_clone_fields_requires_cloning_support(self):
         """
-        Tests the cloning mixin with GFK attribute injection in the `clone` method.
+        Check that only models which support the cloning feature declare clone_fields.
+        """
+        declaring = [
+            model for model in apps.get_models()
+            if model._meta.app_label in CORE_APPS and hasattr(model, 'clone_fields')
+        ]
 
-        This test validates that the `clone` method correctly handles
-        and retains the General Foreign Key (GFK) attributes on an
-        object when the cloning fields are explicitly defined.
-        """
+        # Sanity checking
+        self.assertIn(Prefix, declaring, "Invalid test?")
+
+        offenders = sorted(
+            model._meta.label for model in declaring if not issubclass(model, CloningMixin)
+        )
+        self.assertEqual(offenders, [], "clone_fields is inert on models which do not inherit CloningMixin")
+
+    def test_cloningmixin_emits_gfk_subwidget_params(self):
+        """A cloned GFK is exposed as the GenericObjectChoiceField subwidget params."""
         site = Site.objects.create(name='Test Site', slug='test-site')
         prefix = Prefix.objects.create(prefix='10.0.0.0/24', scope=site)
 
-        original_clone_fields = getattr(Prefix, 'clone_fields', None)
-        try:
-            Prefix.clone_fields = ('scope_type', 'scope_id')
-            attrs = prefix.clone()
+        attrs = prefix.clone()
 
-            self.assertEqual(attrs['scope_type'], prefix.scope_type_id)
-            self.assertEqual(attrs['scope_id'], prefix.scope_id)
-            self.assertEqual(attrs['scope'], prefix.scope_id)
-        finally:
-            if original_clone_fields is None:
-                delattr(Prefix, 'clone_fields')
-            else:
-                Prefix.clone_fields = original_clone_fields
+        content_type = ContentType.objects.get_for_model(Site)
+        self.assertEqual(attrs['scope_content_type'], content_type.pk)
+        self.assertEqual(attrs['scope_object_id'], site.pk)
+        # The bare GFK name and the raw model fields are not emitted.
+        self.assertNotIn('scope', attrs)
+        self.assertNotIn('scope_type', attrs)
+        self.assertNotIn('scope_id', attrs)
 
-    def test_cloningmixin_does_not_inject_gfk_attribute_if_incomplete(self):
-        """
-        Tests the cloning mixin with incomplete cloning fields does not inject the GFK attribute.
+    def test_cloningmixin_omits_unset_gfk(self):
+        """An unset GFK contributes no params to the clone output."""
+        prefix = Prefix.objects.create(prefix='10.0.0.0/24')
 
-        This test validates that the `clone` method correctly handles
-        the case where the cloning fields are incomplete, ensuring that
-        the generic foreign key (GFK) attribute is not injected during
-        the cloning process.
-        """
-        site = Site.objects.create(name='Test Site', slug='test-site')
-        prefix = Prefix.objects.create(prefix='10.0.0.0/24', scope=site)
+        attrs = prefix.clone()
 
-        original_clone_fields = getattr(Prefix, 'clone_fields', None)
-        try:
-            Prefix.clone_fields = ('scope_type',)
-            attrs = prefix.clone()
-
-            self.assertIn('scope_type', attrs)
-            self.assertNotIn('scope', attrs)
-        finally:
-            if original_clone_fields is None:
-                delattr(Prefix, 'clone_fields')
-            else:
-                Prefix.clone_fields = original_clone_fields
+        self.assertNotIn('scope_content_type', attrs)
+        self.assertNotIn('scope_object_id', attrs)
+        self.assertNotIn('scope', attrs)

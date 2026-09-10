@@ -1,3 +1,7 @@
+from decimal import Decimal
+
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 
 from circuits.models import Circuit, CircuitTermination, CircuitType, Provider
@@ -6,16 +10,21 @@ from dcim.filtersets import *
 from dcim.models import *
 from ipam.choices import VLANQinQRoleChoices
 from ipam.models import ASN, RIR, VLAN, VRF, IPAddress, VLANTranslationPolicy
-from netbox.choices import ColorChoices, WeightUnitChoices
+from netbox.choices import (
+    ColorChoices,
+    DiameterUnitChoices,
+    FlowRateUnitChoices,
+    WeightUnitChoices,
+)
 from tenancy.models import Tenant, TenantGroup
 from users.models import User
-from utilities.testing import ChangeLoggedFilterSetTests, create_test_device, create_test_virtualmachine
+from utilities.testing import ChangeLoggedFilterSetTestMixin, create_test_device, create_test_virtualmachine
 from virtualization.models import Cluster, ClusterGroup, ClusterType, VirtualMachine, VMInterface
 from wireless.choices import WirelessChannelChoices, WirelessRoleChoices
 from wireless.models import WirelessLink
 
 
-class DeviceComponentFilterSetTests:
+class DeviceComponentFilterSetTestMixin:
 
     def test_q(self):
         params = {'q': 'First'}
@@ -51,7 +60,7 @@ class DeviceComponentFilterSetTests:
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DeviceComponentTemplateFilterSetTests:
+class DeviceComponentTemplateFilterSetTestMixin:
 
     def test_q(self):
         params = {'q': 'foobar1'}
@@ -67,7 +76,7 @@ class DeviceComponentTemplateFilterSetTests:
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class RegionTestCase(TestCase, ChangeLoggedFilterSetTests):
+class RegionTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Region.objects.all()
     filterset = RegionFilterSet
 
@@ -148,7 +157,7 @@ class RegionTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 8)
 
 
-class SiteGroupTestCase(TestCase, ChangeLoggedFilterSetTests):
+class SiteGroupTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = SiteGroup.objects.all()
     filterset = SiteGroupFilterSet
 
@@ -227,7 +236,7 @@ class SiteGroupTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 8)
 
 
-class SiteTestCase(TestCase, ChangeLoggedFilterSetTests):
+class SiteTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Site.objects.all()
     filterset = SiteFilterSet
     ignore_fields = ('physical_address', 'shipping_address')
@@ -386,7 +395,7 @@ class SiteTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class LocationTestCase(TestCase, ChangeLoggedFilterSetTests):
+class LocationTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Location.objects.all()
     filterset = LocationFilterSet
 
@@ -534,7 +543,38 @@ class LocationTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
 
 
-class RackRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
+class RackGroupTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = RackGroup.objects.all()
+    filterset = RackGroupFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        rack_groups = (
+            RackGroup(name='Rack Group 1', slug='rack-group-1', description='foobar1'),
+            RackGroup(name='Rack Group 2', slug='rack-group-2', description='foobar2'),
+            RackGroup(name='Rack Group 3', slug='rack-group-3'),
+        )
+        RackGroup.objects.bulk_create(rack_groups)
+
+    def test_q(self):
+        params = {'q': 'foobar1'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_name(self):
+        params = {'name': ['Rack Group 1', 'Rack Group 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_slug(self):
+        params = {'slug': ['rack-group-1', 'rack-group-2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['foobar1', 'foobar2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class RackRoleTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = RackRole.objects.all()
     filterset = RackRoleFilterSet
 
@@ -569,7 +609,7 @@ class RackRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class RackTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
+class RackTypeTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = RackType.objects.all()
     filterset = RackTypeFilterSet
 
@@ -722,7 +762,7 @@ class RackTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
+class RackTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Rack.objects.all()
     filterset = RackFilterSet
     ignore_fields = ('units',)
@@ -738,18 +778,18 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
         for region in regions:
             region.save()
 
-        groups = (
+        site_groups = (
             SiteGroup(name='Site Group 1', slug='site-group-1'),
             SiteGroup(name='Site Group 2', slug='site-group-2'),
             SiteGroup(name='Site Group 3', slug='site-group-3'),
         )
-        for group in groups:
-            group.save()
+        for site_group in site_groups:
+            site_group.save()
 
         sites = (
-            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
-            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
-            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+            Site(name='Site 1', slug='site-1', region=regions[0], group=site_groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=site_groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=site_groups[2]),
         )
         Site.objects.bulk_create(sites)
 
@@ -810,6 +850,13 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
         )
         RackType.objects.bulk_create(rack_types)
 
+        rack_groups = (
+            RackGroup(name='Rack Group 1', slug='rack-group-1'),
+            RackGroup(name='Rack Group 2', slug='rack-group-2'),
+            RackGroup(name='Rack Group 3', slug='rack-group-3'),
+        )
+        RackGroup.objects.bulk_create(rack_groups)
+
         rack_roles = (
             RackRole(name='Rack Role 1', slug='rack-role-1'),
             RackRole(name='Rack Role 2', slug='rack-role-2'),
@@ -838,6 +885,7 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
                 facility_id='rack-1',
                 site=sites[0],
                 location=locations[0],
+                group=rack_groups[0],
                 tenant=tenants[0],
                 status=RackStatusChoices.STATUS_ACTIVE,
                 role=rack_roles[0],
@@ -862,6 +910,7 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
                 facility_id='rack-2',
                 site=sites[1],
                 location=locations[1],
+                group=rack_groups[1],
                 tenant=tenants[1],
                 status=RackStatusChoices.STATUS_PLANNED,
                 role=rack_roles[1],
@@ -886,6 +935,7 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
                 facility_id='rack-3',
                 site=sites[2],
                 location=locations[2],
+                group=rack_groups[2],
                 tenant=tenants[2],
                 status=RackStatusChoices.STATUS_RESERVED,
                 role=rack_roles[2],
@@ -1017,6 +1067,13 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'location': [locations[0].slug, locations[1].slug]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
+    def test_rack_group(self):
+        rack_groups = RackGroup.objects.all()[:2]
+        params = {'group_id': [rack_groups[0].pk, rack_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'group': [rack_groups[0].slug, rack_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
     def test_status(self):
         params = {'status': [RackStatusChoices.STATUS_ACTIVE, RackStatusChoices.STATUS_PLANNED]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
@@ -1079,7 +1136,7 @@ class RackTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
+class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = RackReservation.objects.all()
     filterset = RackReservationFilterSet
     ignore_fields = ('units',)
@@ -1095,18 +1152,18 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         for region in regions:
             region.save()
 
-        groups = (
+        site_groups = (
             SiteGroup(name='Site Group 1', slug='site-group-1'),
             SiteGroup(name='Site Group 2', slug='site-group-2'),
             SiteGroup(name='Site Group 3', slug='site-group-3'),
         )
-        for group in groups:
-            group.save()
+        for site_group in site_groups:
+            site_group.save()
 
         sites = (
-            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
-            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
-            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+            Site(name='Site 1', slug='site-1', region=regions[0], group=site_groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=site_groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=site_groups[2]),
         )
         Site.objects.bulk_create(sites)
 
@@ -1118,10 +1175,17 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         for location in locations:
             location.save()
 
+        rack_groups = (
+            RackGroup(name='Rack Group 1', slug='rack-group-1'),
+            RackGroup(name='Rack Group 2', slug='rack-group-2'),
+            RackGroup(name='Rack Group 3', slug='rack-group-3'),
+        )
+        RackGroup.objects.bulk_create(rack_groups)
+
         racks = (
-            Rack(name='Rack 1', site=sites[0], location=locations[0]),
-            Rack(name='Rack 2', site=sites[1], location=locations[1]),
-            Rack(name='Rack 3', site=sites[2], location=locations[2]),
+            Rack(name='Rack 1', site=sites[0], location=locations[0], group=rack_groups[0]),
+            Rack(name='Rack 2', site=sites[1], location=locations[1], group=rack_groups[1]),
+            Rack(name='Rack 3', site=sites[2], location=locations[2], group=rack_groups[2]),
         )
         Rack.objects.bulk_create(racks)
 
@@ -1150,7 +1214,7 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         reservations = (
             RackReservation(
                 rack=racks[0],
-                units=[1, 2, 3],
+                units=[1, 2],
                 status=RackReservationStatusChoices.STATUS_ACTIVE,
                 user=users[0],
                 tenant=tenants[0],
@@ -1158,7 +1222,7 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
             ),
             RackReservation(
                 rack=racks[1],
-                units=[4, 5, 6],
+                units=[1, 2, 3],
                 status=RackReservationStatusChoices.STATUS_PENDING,
                 user=users[1],
                 tenant=tenants[1],
@@ -1166,7 +1230,7 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
             ),
             RackReservation(
                 rack=racks[2],
-                units=[7, 8, 9],
+                units=[1, 2, 3, 4],
                 status=RackReservationStatusChoices.STATUS_STALE,
                 user=users[2],
                 tenant=tenants[2],
@@ -1207,6 +1271,13 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'location': [locations[0].slug, locations[1].slug]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
+    def test_rack_group(self):
+        rack_groups = RackGroup.objects.all()[:2]
+        params = {'group_id': [rack_groups[0].pk, rack_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'group': [rack_groups[0].slug, rack_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
     def test_status(self):
         params = {'status': [RackReservationStatusChoices.STATUS_ACTIVE, RackReservationStatusChoices.STATUS_PENDING]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
@@ -1229,6 +1300,14 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'description': ['foobar1', 'foobar2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
+    def test_unit_count(self):
+        params = {'unit_count_min': 3}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'unit_count_max': 3}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'unit_count_min': 3, 'unit_count_max': 3}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
     def test_tenant_group(self):
         tenant_groups = TenantGroup.objects.all()[:2]
         params = {'tenant_group_id': [tenant_groups[0].pk, tenant_groups[1].pk]}
@@ -1237,7 +1316,7 @@ class RackReservationTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ManufacturerTestCase(TestCase, ChangeLoggedFilterSetTests):
+class ManufacturerTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Manufacturer.objects.all()
     filterset = ManufacturerFilterSet
 
@@ -1268,7 +1347,7 @@ class ManufacturerTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
+class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = DeviceType.objects.all()
     filterset = DeviceTypeFilterSet
     ignore_fields = ('front_image', 'rear_image')
@@ -1304,6 +1383,7 @@ class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
                 rear_image='rear.png',
                 weight=10,
                 weight_unit=WeightUnitChoices.UNIT_POUND,
+                end_of_life='2030-01-01',
                 description='foobar1'
             ),
             DeviceType(
@@ -1318,6 +1398,7 @@ class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
                 airflow=DeviceAirflowChoices.AIRFLOW_FRONT_TO_REAR,
                 weight=20,
                 weight_unit=WeightUnitChoices.UNIT_POUND,
+                end_of_life='2035-06-30',
                 description='foobar2'
             ),
             DeviceType(
@@ -1398,6 +1479,14 @@ class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
     def test_part_number(self):
         params = {'part_number': ['Part Number 1', 'Part Number 2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_end_of_life(self):
+        params = {'end_of_life': ['2030-01-01', '2035-06-30']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'end_of_life__gte': ['2031-01-01']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+        params = {'end_of_life__lte': ['2031-01-01']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
     def test_description(self):
         params = {'description': ['foobar1', 'foobar2']}
@@ -1510,7 +1599,7 @@ class DeviceTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
+class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = ModuleType.objects.all()
     filterset = ModuleTypeFilterSet
     ignore_fields = ['attribute_data']
@@ -1558,6 +1647,8 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
                 weight_unit=WeightUnitChoices.UNIT_POUND,
                 description='foobar1',
                 airflow=ModuleAirflowChoices.FRONT_TO_REAR,
+                cooling_method=CoolingMethodChoices.METHOD_LIQUID,
+                end_of_life='2030-01-01',
                 profile=module_type_profiles[0],
                 attribute_data={
                     'string': 'string1',
@@ -1574,6 +1665,8 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
                 weight_unit=WeightUnitChoices.UNIT_POUND,
                 description='foobar2',
                 airflow=ModuleAirflowChoices.REAR_TO_FRONT,
+                cooling_method=CoolingMethodChoices.METHOD_HYBRID,
+                end_of_life='2035-06-30',
                 profile=module_type_profiles[1],
                 attribute_data={
                     'string': 'string2',
@@ -1635,6 +1728,10 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
             PortTemplateMapping(module_type=module_types[0], front_port=front_ports[0], rear_port=rear_ports[0]),
             PortTemplateMapping(module_type=module_types[1], front_port=front_ports[1], rear_port=rear_ports[1]),
         ])
+        ModuleBayTemplate.objects.bulk_create((
+            ModuleBayTemplate(module_type=module_types[0], name='Module Bay 1'),
+            ModuleBayTemplate(module_type=module_types[1], name='Module Bay 2'),
+        ))
 
     def test_q(self):
         params = {'q': 'foobar1'}
@@ -1651,6 +1748,14 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
     def test_description(self):
         params = {'description': ['foobar1', 'foobar2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_end_of_life(self):
+        params = {'end_of_life': ['2030-01-01', '2035-06-30']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'end_of_life__gte': ['2031-01-01']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+        params = {'end_of_life__lte': ['2031-01-01']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
     def test_manufacturer(self):
         manufacturers = Manufacturer.objects.all()[:2]
@@ -1695,6 +1800,12 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'pass_through_ports': 'false'}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
+    def test_module_bays(self):
+        params = {'module_bays': 'true'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'module_bays': 'false'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
     def test_weight(self):
         params = {'weight': [10, 20]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
@@ -1705,6 +1816,10 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
 
     def test_airflow(self):
         params = {'airflow': RackAirflowChoices.FRONT_TO_REAR}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_cooling_method(self):
+        params = {'cooling_method': CoolingMethodChoices.METHOD_LIQUID}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
     def test_profile(self):
@@ -1725,7 +1840,7 @@ class ModuleTypeTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class ModuleTypeProfileTestCase(TestCase, ChangeLoggedFilterSetTests):
+class ModuleTypeProfileTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = ModuleTypeProfile.objects.all()
     filterset = ModuleTypeProfileFilterSet
     ignore_fields = ['schema']
@@ -1784,7 +1899,50 @@ class ModuleTypeProfileTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ConsolePortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class ModuleBayTypeTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = ModuleBayType.objects.all()
+    filterset = ModuleBayTypeFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+        manufacturers = (
+            Manufacturer(name='Manufacturer 1', slug='manufacturer-1'),
+            Manufacturer(name='Manufacturer 2', slug='manufacturer-2'),
+            Manufacturer(name='Manufacturer 3', slug='manufacturer-3'),
+        )
+        Manufacturer.objects.bulk_create(manufacturers)
+
+        module_bay_types = (
+            ModuleBayType(manufacturer=manufacturers[0], name='Module Bay Type 1', slug='module-bay-type-1'),
+            ModuleBayType(manufacturer=manufacturers[1], name='Module Bay Type 2', slug='module-bay-type-2'),
+            ModuleBayType(manufacturer=manufacturers[2], name='Module Bay Type 3', slug='module-bay-type-3'),
+        )
+        ModuleBayType.objects.bulk_create(module_bay_types)
+
+    def test_q(self):
+        params = {'q': 'Module Bay Type 1'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_name(self):
+        params = {'name': ['Module Bay Type 1', 'Module Bay Type 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_slug(self):
+        params = {'slug': ['module-bay-type-1', 'module-bay-type-2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_manufacturer(self):
+        manufacturers = Manufacturer.objects.filter(name__in=['Manufacturer 1', 'Manufacturer 2'])
+        params = {'manufacturer': [m.slug for m in manufacturers]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_manufacturer_id(self):
+        manufacturers = Manufacturer.objects.filter(name__in=['Manufacturer 1', 'Manufacturer 2'])
+        params = {'manufacturer_id': [m.pk for m in manufacturers]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class ConsolePortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = ConsolePortTemplate.objects.all()
     filterset = ConsolePortTemplateFilterSet
 
@@ -1811,7 +1969,9 @@ class ConsolePortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTest
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ConsoleServerPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class ConsoleServerPortTemplateTestCase(
+    TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin
+):
     queryset = ConsoleServerPortTemplate.objects.all()
     filterset = ConsoleServerPortTemplateFilterSet
 
@@ -1838,7 +1998,7 @@ class ConsoleServerPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterS
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class PowerPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class PowerPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = PowerPortTemplate.objects.all()
     filterset = PowerPortTemplateFilterSet
 
@@ -1891,7 +2051,7 @@ class PowerPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class PowerOutletTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class PowerOutletTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = PowerOutletTemplate.objects.all()
     filterset = PowerOutletTemplateFilterSet
 
@@ -1944,7 +2104,143 @@ class PowerOutletTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTest
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class InterfaceTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class CoolingIntakeTemplateTestCase(
+    TestCase,
+    DeviceComponentTemplateFilterSetTestMixin,
+    ChangeLoggedFilterSetTestMixin
+):
+    queryset = CoolingIntakeTemplate.objects.all()
+    filterset = CoolingIntakeTemplateFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        manufacturer = Manufacturer.objects.create(name='Manufacturer 1', slug='manufacturer-1')
+
+        device_types = (
+            DeviceType(manufacturer=manufacturer, model='Model 1', slug='model-1'),
+            DeviceType(manufacturer=manufacturer, model='Model 2', slug='model-2'),
+            DeviceType(manufacturer=manufacturer, model='Model 3', slug='model-3'),
+        )
+        DeviceType.objects.bulk_create(device_types)
+
+        CoolingIntakeTemplate.objects.bulk_create((
+            CoolingIntakeTemplate(
+                device_type=device_types[0],
+                name='Cooling Port 1',
+                type=CoolingConnectorTypeChoices.TYPE_UQD,
+                diameter=Decimal('25'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=100,
+                max_flow_unit=FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE,
+                description='foobar1'
+            ),
+            CoolingIntakeTemplate(
+                device_type=device_types[1],
+                name='Cooling Port 2',
+                type=CoolingConnectorTypeChoices.TYPE_QDC,
+                diameter=Decimal('32'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=200,
+                max_flow_unit=FlowRateUnitChoices.UNIT_CUBIC_METERS_PER_HOUR,
+                description='foobar2'
+            ),
+            CoolingIntakeTemplate(
+                device_type=device_types[2],
+                name='Cooling Port 3',
+                type=CoolingConnectorTypeChoices.TYPE_UQDB,
+                diameter=Decimal('40'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=300,
+                max_flow_unit=FlowRateUnitChoices.UNIT_GALLONS_PER_MINUTE,
+                description='foobar3'
+            ),
+        ))
+
+    def test_name(self):
+        params = {'name': ['Cooling Port 1', 'Cooling Port 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_type(self):
+        params = {'type': [CoolingConnectorTypeChoices.TYPE_UQD]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_diameter(self):
+        params = {'diameter': [Decimal('25')]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_max_flow(self):
+        params = {'max_flow': [100, 200]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_max_flow_unit(self):
+        params = {'max_flow_unit': [
+            FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE, FlowRateUnitChoices.UNIT_CUBIC_METERS_PER_HOUR
+        ]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class CoolingOutflowTemplateTestCase(
+    TestCase,
+    DeviceComponentTemplateFilterSetTestMixin,
+    ChangeLoggedFilterSetTestMixin
+):
+    queryset = CoolingOutflowTemplate.objects.all()
+    filterset = CoolingOutflowTemplateFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        manufacturer = Manufacturer.objects.create(name='Manufacturer 1', slug='manufacturer-1')
+
+        device_types = (
+            DeviceType(manufacturer=manufacturer, model='Model 1', slug='model-1'),
+            DeviceType(manufacturer=manufacturer, model='Model 2', slug='model-2'),
+            DeviceType(manufacturer=manufacturer, model='Model 3', slug='model-3'),
+        )
+        DeviceType.objects.bulk_create(device_types)
+
+        CoolingOutflowTemplate.objects.bulk_create((
+            CoolingOutflowTemplate(
+                device_type=device_types[0],
+                name='Cooling Outlet 1',
+                type=CoolingConnectorTypeChoices.TYPE_UQD,
+                diameter=Decimal('25'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='foobar1'
+            ),
+            CoolingOutflowTemplate(
+                device_type=device_types[1],
+                name='Cooling Outlet 2',
+                type=CoolingConnectorTypeChoices.TYPE_QDC,
+                diameter=Decimal('32'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='foobar2'
+            ),
+            CoolingOutflowTemplate(
+                device_type=device_types[2],
+                name='Cooling Outlet 3',
+                type=CoolingConnectorTypeChoices.TYPE_UQDB,
+                diameter=Decimal('40'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='foobar3'
+            ),
+        ))
+
+    def test_name(self):
+        params = {'name': ['Cooling Outlet 1', 'Cooling Outlet 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_type(self):
+        params = {'type': [CoolingConnectorTypeChoices.TYPE_UQD]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_diameter(self):
+        params = {'diameter': [Decimal('25')]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+
+class InterfaceTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = InterfaceTemplate.objects.all()
     filterset = InterfaceTemplateFilterSet
 
@@ -2027,7 +2323,7 @@ class InterfaceTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class FrontPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class FrontPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = FrontPortTemplate.objects.all()
     filterset = FrontPortTemplateFilterSet
 
@@ -2100,7 +2396,7 @@ class FrontPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class RearPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class RearPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = RearPortTemplate.objects.all()
     filterset = RearPortTemplateFilterSet
 
@@ -2160,7 +2456,7 @@ class RearPortTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, 
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ModuleBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class ModuleBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = ModuleBayTemplate.objects.all()
     filterset = ModuleBayTemplateFilterSet
 
@@ -2185,13 +2481,21 @@ class ModuleBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         ModuleBayTemplate.objects.bulk_create(
             (
                 ModuleBayTemplate(
-                    device_type=device_types[0], name='Module Bay 1', description='foobar1'
+                    device_type=device_types[0], name='Module Bay 1', enabled=True, description='foobar1'
                 ),
                 ModuleBayTemplate(
-                    device_type=device_types[1], name='Module Bay 2', description='foobar2', module_type=module_types[0]
+                    device_type=device_types[1],
+                    name='Module Bay 2',
+                    enabled=False,
+                    description='foobar2',
+                    module_type=module_types[0],
                 ),
                 ModuleBayTemplate(
-                    device_type=device_types[2], name='Module Bay 3', description='foobar3', module_type=module_types[1]
+                    device_type=device_types[2],
+                    name='Module Bay 3',
+                    enabled=True,
+                    description='foobar3',
+                    module_type=module_types[1],
                 ),
             )
         )
@@ -2200,13 +2504,19 @@ class ModuleBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         params = {'name': ['Module Bay 1', 'Module Bay 2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
+    def test_enabled(self):
+        params = {'enabled': True}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'enabled': False}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
     def test_module_type(self):
         module_types = ModuleType.objects.all()[:2]
         params = {'module_type_id': [module_types[0].pk, module_types[1].pk]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DeviceBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+class DeviceBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = DeviceBayTemplate.objects.all()
     filterset = DeviceBayTemplateFilterSet
 
@@ -2222,18 +2532,34 @@ class DeviceBayTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests,
         )
         DeviceType.objects.bulk_create(device_types)
 
-        DeviceBayTemplate.objects.bulk_create((
-            DeviceBayTemplate(device_type=device_types[0], name='Device Bay 1', description='foobar1'),
-            DeviceBayTemplate(device_type=device_types[1], name='Device Bay 2', description='foobar2'),
-            DeviceBayTemplate(device_type=device_types[2], name='Device Bay 3', description='foobar3'),
-        ))
+        DeviceBayTemplate.objects.bulk_create(
+            (
+                DeviceBayTemplate(
+                    device_type=device_types[0], name='Device Bay 1', enabled=True, description='foobar1'
+                ),
+                DeviceBayTemplate(
+                    device_type=device_types[1], name='Device Bay 2', enabled=False, description='foobar2'
+                ),
+                DeviceBayTemplate(
+                    device_type=device_types[2], name='Device Bay 3', enabled=True, description='foobar3'
+                ),
+            )
+        )
 
     def test_name(self):
         params = {'name': ['Device Bay 1', 'Device Bay 2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
+    def test_enabled(self):
+        params = {'enabled': True}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'enabled': False}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
-class InventoryItemTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTests, ChangeLoggedFilterSetTests):
+
+class InventoryItemTemplateTestCase(
+    TestCase, DeviceComponentTemplateFilterSetTestMixin, ChangeLoggedFilterSetTestMixin
+):
     queryset = InventoryItemTemplate.objects.all()
     filterset = InventoryItemTemplateFilterSet
 
@@ -2343,7 +2669,7 @@ class InventoryItemTemplateTestCase(TestCase, DeviceComponentTemplateFilterSetTe
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DeviceRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
+class DeviceRoleTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = DeviceRole.objects.all()
     filterset = DeviceRoleFilterSet
 
@@ -2451,7 +2777,7 @@ class DeviceRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
 
 
-class PlatformTestCase(TestCase, ChangeLoggedFilterSetTests):
+class PlatformTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Platform.objects.all()
     filterset = PlatformFilterSet
 
@@ -2552,7 +2878,7 @@ class PlatformTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
 
 
-class DeviceTestCase(TestCase, ChangeLoggedFilterSetTests):
+class DeviceTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Device.objects.all()
     filterset = DeviceFilterSet
     ignore_fields = ('local_context_data', 'oob_ip', 'primary_ip4', 'primary_ip6', 'vc_master_for')
@@ -3049,7 +3375,7 @@ class DeviceTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ModuleTestCase(TestCase, ChangeLoggedFilterSetTests):
+class ModuleTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Module.objects.all()
     filterset = ModuleFilterSet
     ignore_fields = ('local_context_data',)
@@ -3085,6 +3411,11 @@ class ModuleTestCase(TestCase, ChangeLoggedFilterSetTests):
             Manufacturer(name='Manufacturer 3', slug='manufacturer-3'),
         )
         Manufacturer.objects.bulk_create(manufacturers)
+        module_type_profiles = (
+            ModuleTypeProfile(name='Test CPU'),
+            ModuleTypeProfile(name='Test Hard disk'),
+        )
+        ModuleTypeProfile.objects.bulk_create(module_type_profiles)
 
         device_types = (
             DeviceType(manufacturer=manufacturers[0], model='Device Type 1', slug='device-type-1'),
@@ -3148,8 +3479,8 @@ class ModuleTestCase(TestCase, ChangeLoggedFilterSetTests):
         Device.objects.bulk_create(devices)
 
         module_types = (
-            ModuleType(manufacturer=manufacturers[0], model='Module Type 1'),
-            ModuleType(manufacturer=manufacturers[1], model='Module Type 2'),
+            ModuleType(manufacturer=manufacturers[0], model='Module Type 1', profile=module_type_profiles[0]),
+            ModuleType(manufacturer=manufacturers[1], model='Module Type 2', profile=module_type_profiles[1]),
             ModuleType(manufacturer=manufacturers[2], model='Module Type 3'),
         )
         ModuleType.objects.bulk_create(module_types)
@@ -3265,6 +3596,19 @@ class ModuleTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'module_type': [module_types[0].model, module_types[1].model]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 6)
 
+    def test_profile(self):
+        profiles = ModuleTypeProfile.objects.filter(name__startswith='Test').order_by('name')
+        params = {'profile_id': [profiles[0].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'profile': [profiles[0].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'profile_id': [profiles[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'profile': [profiles[1].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'profile_id': [settings.FILTERS_NULL_CHOICE_VALUE]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+
     def test_description(self):
         params = {'description': ['foobar1', 'foobar2']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
@@ -3329,7 +3673,7 @@ class ModuleTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 6)
 
 
-class ConsolePortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class ConsolePortTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = ConsolePort.objects.all()
     filterset = ConsolePortFilterSet
     ignore_fields = ('cable_positions',)
@@ -3580,7 +3924,7 @@ class ConsolePortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedF
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class ConsoleServerPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class ConsoleServerPortTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = ConsoleServerPort.objects.all()
     filterset = ConsoleServerPortFilterSet
     ignore_fields = ('cable_positions',)
@@ -3831,7 +4175,7 @@ class ConsoleServerPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeL
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class PowerPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class PowerPortTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = PowerPort.objects.all()
     filterset = PowerPortFilterSet
     ignore_fields = ('cable_positions',)
@@ -4096,7 +4440,7 @@ class PowerPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class PowerOutletTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class PowerOutletTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = PowerOutlet.objects.all()
     filterset = PowerOutletFilterSet
     ignore_fields = ('cable_positions',)
@@ -4381,7 +4725,520 @@ class PowerOutletTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedF
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
 
 
-class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class CoolingIntakeTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
+    queryset = CoolingIntake.objects.all()
+    filterset = CoolingIntakeFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        regions = (
+            Region(name='Region 1', slug='region-1'),
+            Region(name='Region 2', slug='region-2'),
+            Region(name='Region 3', slug='region-3'),
+        )
+        for region in regions:
+            region.save()
+
+        groups = (
+            SiteGroup(name='Site Group 1', slug='site-group-1'),
+            SiteGroup(name='Site Group 2', slug='site-group-2'),
+            SiteGroup(name='Site Group 3', slug='site-group-3'),
+        )
+        for group in groups:
+            group.save()
+
+        sites = Site.objects.bulk_create((
+            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+            Site(name='Site X', slug='site-x'),
+        ))
+
+        manufacturer = Manufacturer.objects.create(name='Manufacturer 1', slug='manufacturer-1')
+        device_types = (
+            DeviceType(manufacturer=manufacturer, model='Device Type 1', slug='device-type-1'),
+            DeviceType(manufacturer=manufacturer, model='Device Type 2', slug='device-type-2'),
+            DeviceType(manufacturer=manufacturer, model='Device Type 3', slug='device-type-3'),
+        )
+        DeviceType.objects.bulk_create(device_types)
+
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model='Module Type 1')
+
+        roles = (
+            DeviceRole(name='Device Role 1', slug='device-role-1'),
+            DeviceRole(name='Device Role 2', slug='device-role-2'),
+            DeviceRole(name='Device Role 3', slug='device-role-3'),
+        )
+        for role in roles:
+            role.save()
+
+        locations = (
+            Location(name='Location 1', slug='location-1', site=sites[0]),
+            Location(name='Location 2', slug='location-2', site=sites[1]),
+            Location(name='Location 3', slug='location-3', site=sites[2]),
+        )
+        for location in locations:
+            location.save()
+
+        racks = (
+            Rack(name='Rack 1', site=sites[0]),
+            Rack(name='Rack 2', site=sites[1]),
+            Rack(name='Rack 3', site=sites[2]),
+        )
+        Rack.objects.bulk_create(racks)
+
+        tenants = (
+            Tenant(name='Tenant 1', slug='tenant-1'),
+            Tenant(name='Tenant 2', slug='tenant-2'),
+            Tenant(name='Tenant 3', slug='tenant-3'),
+        )
+        Tenant.objects.bulk_create(tenants)
+
+        devices = (
+            Device(
+                name='Device 1',
+                tenant=tenants[0],
+                device_type=device_types[0],
+                role=roles[0],
+                site=sites[0],
+                location=locations[0],
+                rack=racks[0],
+                status='active',
+            ),
+            Device(
+                name='Device 2',
+                tenant=tenants[1],
+                device_type=device_types[1],
+                role=roles[1],
+                site=sites[1],
+                location=locations[1],
+                rack=racks[1],
+                status='planned',
+            ),
+            Device(
+                name='Device 3',
+                tenant=tenants[2],
+                device_type=device_types[2],
+                role=roles[2],
+                site=sites[2],
+                location=locations[2],
+                rack=racks[2],
+                status='offline',
+            ),
+            # For cable connections
+            Device(
+                name=None,
+                device_type=device_types[2],
+                role=roles[2],
+                site=sites[3],
+                status='offline'
+            ),
+        )
+        Device.objects.bulk_create(devices)
+
+        module_bays = (
+            ModuleBay(device=devices[0], name='Module Bay 1'),
+            ModuleBay(device=devices[1], name='Module Bay 2'),
+            ModuleBay(device=devices[2], name='Module Bay 3'),
+        )
+        for module_bay in module_bays:
+            module_bay.save()
+
+        modules = (
+            Module(device=devices[0], module_bay=module_bays[0], module_type=module_type),
+            Module(device=devices[1], module_bay=module_bays[1], module_type=module_type),
+            Module(device=devices[2], module_bay=module_bays[2], module_type=module_type),
+        )
+        Module.objects.bulk_create(modules)
+
+        cooling_outflow = CoolingOutflow.objects.create(device=devices[3], name='Cooling Outlet 1')
+
+        cooling_intakes = (
+            CoolingIntake(
+                device=devices[0],
+                module=modules[0],
+                name='Cooling Port 1',
+                label='A',
+                type=CoolingConnectorTypeChoices.TYPE_UQD,
+                diameter=Decimal('25'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=100,
+                max_flow_unit=FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE,
+                description='First',
+                cooling_outflow=cooling_outflow,
+                _site=devices[0].site,
+                _location=devices[0].location,
+                _rack=devices[0].rack,
+            ),
+            CoolingIntake(
+                device=devices[1],
+                module=modules[1],
+                name='Cooling Port 2',
+                label='B',
+                type=CoolingConnectorTypeChoices.TYPE_QDC,
+                diameter=Decimal('32'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=200,
+                max_flow_unit=FlowRateUnitChoices.UNIT_CUBIC_METERS_PER_HOUR,
+                description='Second',
+                _site=devices[1].site,
+                _location=devices[1].location,
+                _rack=devices[1].rack,
+            ),
+            CoolingIntake(
+                device=devices[2],
+                module=modules[2],
+                name='Cooling Port 3',
+                label='C',
+                type=CoolingConnectorTypeChoices.TYPE_UQDB,
+                diameter=Decimal('40'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                max_flow=300,
+                max_flow_unit=FlowRateUnitChoices.UNIT_GALLONS_PER_MINUTE,
+                description='Third',
+                _site=devices[2].site,
+                _location=devices[2].location,
+                _rack=devices[2].rack,
+            ),
+        )
+        CoolingIntake.objects.bulk_create(cooling_intakes)
+
+    def test_name(self):
+        params = {'name': ['Cooling Port 1', 'Cooling Port 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_label(self):
+        params = {'label': ['A', 'B']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['First', 'Second']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_type(self):
+        params = {'type': [CoolingConnectorTypeChoices.TYPE_UQD, CoolingConnectorTypeChoices.TYPE_QDC]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_cooling_outflow(self):
+        cooling_outflow = CoolingOutflow.objects.first()
+        params = {'cooling_outflow_id': [cooling_outflow.pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_diameter(self):
+        params = {'diameter': [Decimal('25'), Decimal('32')]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_max_flow(self):
+        params = {'max_flow': [100, 200]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_max_flow_unit(self):
+        params = {'max_flow_unit': [
+            FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE, FlowRateUnitChoices.UNIT_CUBIC_METERS_PER_HOUR
+        ]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_region(self):
+        regions = Region.objects.all()[:2]
+        params = {'region_id': [regions[0].pk, regions[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'region': [regions[0].slug, regions[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site_group(self):
+        site_groups = SiteGroup.objects.all()[:2]
+        params = {'site_group_id': [site_groups[0].pk, site_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site_group': [site_groups[0].slug, site_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site(self):
+        sites = Site.objects.all()[:2]
+        params = {'site_id': [sites[0].pk, sites[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site': [sites[0].slug, sites[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_location(self):
+        locations = Location.objects.all()[:2]
+        params = {'location_id': [locations[0].pk, locations[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'location': [locations[0].slug, locations[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_rack(self):
+        racks = Rack.objects.all()[:2]
+        params = {'rack_id': [racks[0].pk, racks[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'rack': [racks[0].name, racks[1].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_device(self):
+        devices = Device.objects.all()[:2]
+        params = {'device_id': [devices[0].pk, devices[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'device': [devices[0].name, devices[1].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_module(self):
+        modules = Module.objects.all()[:2]
+        params = {'module_id': [modules[0].pk, modules[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class CoolingOutflowTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
+    queryset = CoolingOutflow.objects.all()
+    filterset = CoolingOutflowFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        regions = (
+            Region(name='Region 1', slug='region-1'),
+            Region(name='Region 2', slug='region-2'),
+            Region(name='Region 3', slug='region-3'),
+        )
+        for region in regions:
+            region.save()
+
+        groups = (
+            SiteGroup(name='Site Group 1', slug='site-group-1'),
+            SiteGroup(name='Site Group 2', slug='site-group-2'),
+            SiteGroup(name='Site Group 3', slug='site-group-3'),
+        )
+        for group in groups:
+            group.save()
+
+        sites = Site.objects.bulk_create((
+            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+            Site(name='Site X', slug='site-x'),
+        ))
+
+        manufacturer = Manufacturer.objects.create(name='Manufacturer 1', slug='manufacturer-1')
+        device_types = (
+            DeviceType(manufacturer=manufacturer, model='Device Type 1', slug='device-type-1'),
+            DeviceType(manufacturer=manufacturer, model='Device Type 2', slug='device-type-2'),
+            DeviceType(manufacturer=manufacturer, model='Device Type 3', slug='device-type-3'),
+        )
+        DeviceType.objects.bulk_create(device_types)
+
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model='Module Type 1')
+
+        roles = (
+            DeviceRole(name='Device Role 1', slug='device-role-1'),
+            DeviceRole(name='Device Role 2', slug='device-role-2'),
+            DeviceRole(name='Device Role 3', slug='device-role-3'),
+        )
+        for role in roles:
+            role.save()
+
+        locations = (
+            Location(name='Location 1', slug='location-1', site=sites[0]),
+            Location(name='Location 2', slug='location-2', site=sites[1]),
+            Location(name='Location 3', slug='location-3', site=sites[2]),
+        )
+        for location in locations:
+            location.save()
+
+        racks = (
+            Rack(name='Rack 1', site=sites[0]),
+            Rack(name='Rack 2', site=sites[1]),
+            Rack(name='Rack 3', site=sites[2]),
+        )
+        Rack.objects.bulk_create(racks)
+
+        tenants = (
+            Tenant(name='Tenant 1', slug='tenant-1'),
+            Tenant(name='Tenant 2', slug='tenant-2'),
+            Tenant(name='Tenant 3', slug='tenant-3'),
+        )
+        Tenant.objects.bulk_create(tenants)
+
+        devices = (
+            Device(
+                name='Device 1',
+                tenant=tenants[0],
+                device_type=device_types[0],
+                role=roles[0],
+                site=sites[0],
+                location=locations[0],
+                rack=racks[0],
+                status='active',
+            ),
+            Device(
+                name='Device 2',
+                tenant=tenants[1],
+                device_type=device_types[1],
+                role=roles[1],
+                site=sites[1],
+                location=locations[1],
+                rack=racks[1],
+                status='planned',
+            ),
+            Device(
+                name='Device 3',
+                tenant=tenants[2],
+                device_type=device_types[2],
+                role=roles[2],
+                site=sites[2],
+                location=locations[2],
+                rack=racks[2],
+                status='offline',
+            ),
+            # For cable connections
+            Device(
+                name=None,
+                device_type=device_types[2],
+                role=roles[2],
+                site=sites[3],
+                status='offline'
+            ),
+        )
+        Device.objects.bulk_create(devices)
+
+        module_bays = (
+            ModuleBay(device=devices[0], name='Module Bay 1'),
+            ModuleBay(device=devices[1], name='Module Bay 2'),
+            ModuleBay(device=devices[2], name='Module Bay 3'),
+        )
+        for module_bay in module_bays:
+            module_bay.save()
+
+        modules = (
+            Module(device=devices[0], module_bay=module_bays[0], module_type=module_type),
+            Module(device=devices[1], module_bay=module_bays[1], module_type=module_type),
+            Module(device=devices[2], module_bay=module_bays[2], module_type=module_type),
+        )
+        Module.objects.bulk_create(modules)
+
+        cooling_intakes = (
+            CoolingIntake(device=devices[0], name='Cooling Port 1'),
+            CoolingIntake(device=devices[1], name='Cooling Port 2'),
+        )
+        CoolingIntake.objects.bulk_create(cooling_intakes)
+
+        cooling_outflows = (
+            CoolingOutflow(
+                device=devices[0],
+                module=modules[0],
+                name='Cooling Outlet 1',
+                label='A',
+                type=CoolingConnectorTypeChoices.TYPE_UQD,
+                diameter=Decimal('25'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='First',
+                cooling_intake=cooling_intakes[0],
+                _site=devices[0].site,
+                _location=devices[0].location,
+                _rack=devices[0].rack,
+            ),
+            CoolingOutflow(
+                device=devices[1],
+                module=modules[1],
+                name='Cooling Outlet 2',
+                label='B',
+                type=CoolingConnectorTypeChoices.TYPE_QDC,
+                diameter=Decimal('32'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='Second',
+                cooling_intake=cooling_intakes[1],
+                _site=devices[1].site,
+                _location=devices[1].location,
+                _rack=devices[1].rack,
+            ),
+            CoolingOutflow(
+                device=devices[2],
+                module=modules[2],
+                name='Cooling Outlet 3',
+                label='C',
+                type=CoolingConnectorTypeChoices.TYPE_UQDB,
+                diameter=Decimal('40'),
+                diameter_unit=DiameterUnitChoices.UNIT_MILLIMETER,
+                description='Third',
+                _site=devices[2].site,
+                _location=devices[2].location,
+                _rack=devices[2].rack,
+            ),
+        )
+        CoolingOutflow.objects.bulk_create(cooling_outflows)
+
+    def test_name(self):
+        params = {'name': ['Cooling Outlet 1', 'Cooling Outlet 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_label(self):
+        params = {'label': ['A', 'B']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['First', 'Second']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_type(self):
+        params = {'type': [CoolingConnectorTypeChoices.TYPE_UQD, CoolingConnectorTypeChoices.TYPE_QDC]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_diameter(self):
+        params = {'diameter': [Decimal('25'), Decimal('32')]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_cooling_intake(self):
+        cooling_intakes = CoolingIntake.objects.all()[:2]
+        params = {'cooling_intake_id': [cooling_intakes[0].pk, cooling_intakes[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_region(self):
+        regions = Region.objects.all()[:2]
+        params = {'region_id': [regions[0].pk, regions[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'region': [regions[0].slug, regions[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site_group(self):
+        site_groups = SiteGroup.objects.all()[:2]
+        params = {'site_group_id': [site_groups[0].pk, site_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site_group': [site_groups[0].slug, site_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site(self):
+        sites = Site.objects.all()[:2]
+        params = {'site_id': [sites[0].pk, sites[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site': [sites[0].slug, sites[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_location(self):
+        locations = Location.objects.all()[:2]
+        params = {'location_id': [locations[0].pk, locations[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'location': [locations[0].slug, locations[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_rack(self):
+        racks = Rack.objects.all()[:2]
+        params = {'rack_id': [racks[0].pk, racks[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'rack': [racks[0].name, racks[1].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_device(self):
+        devices = Device.objects.all()[:2]
+        params = {'device_id': [devices[0].pk, devices[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'device': [devices[0].name, devices[1].name]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_module(self):
+        modules = Module.objects.all()[:2]
+        params = {'module_id': [modules[0].pk, modules[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class InterfaceTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = Interface.objects.all()
     filterset = InterfaceFilterSet
     ignore_fields = ('tagged_vlans', 'untagged_vlan', 'qinq_svlan', 'vdcs', 'cable_positions')
@@ -4513,6 +5370,11 @@ class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
             ),
         )
         Device.objects.bulk_create(devices)
+
+        # Expose base devices for regression tests which need custom cabling
+        # topologies.
+        cls.connection_filter_device = devices[0]
+        cls.connection_filter_peer_device = devices[1]
 
         virtual_chassis.master = devices[0]
         virtual_chassis.save()
@@ -4655,7 +5517,7 @@ class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
                 enabled=True,
                 mgmt_only=True,
                 tx_power=40,
-                speed=100000,
+                speed=16_000_000_000,
                 duplex='full',
                 poe_mode=InterfacePoEModeChoices.MODE_PD,
                 poe_type=InterfacePoETypeChoices.TYPE_2_8023AT,
@@ -4757,7 +5619,7 @@ class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
     def test_speed(self):
-        params = {'speed': [1000000, 100000]}
+        params = {'speed': [16_000_000_000, 1_000_000, 100_000]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
 
     def test_duplex(self):
@@ -4947,6 +5809,117 @@ class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         params = {'connected': False}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
 
+    def test_connected_excludes_incomplete_pass_through_path(self):
+        """
+        Validate that connected=true requires a complete cable path, not merely
+        an active cable path.
+
+        The incomplete path below models:
+
+            interface -- front port -- rear port
+
+        with no onward cable from the rear port.
+        """
+        device = self.connection_filter_device
+        peer_device = self.connection_filter_peer_device
+
+        connected_interface = Interface.objects.create(
+            device=device,
+            name='Connected Filter Interface',
+            type=InterfaceTypeChoices.TYPE_1GE_FIXED,
+        )
+        connected_peer_interface = Interface.objects.create(
+            device=peer_device,
+            name='Connected Filter Peer Interface',
+            type=InterfaceTypeChoices.TYPE_1GE_FIXED,
+        )
+        incomplete_path_interface = Interface.objects.create(
+            device=device,
+            name='Connected Filter Incomplete Path Interface',
+            type=InterfaceTypeChoices.TYPE_1GE_FIXED,
+        )
+
+        patch_panel = Device.objects.create(
+            name='Connected Filter Patch Panel',
+            site=device.site,
+            device_type=device.device_type,
+            role=device.role,
+        )
+        rear_port = RearPort.objects.create(
+            device=patch_panel,
+            name='Patch Rear Port',
+            type=PortTypeChoices.TYPE_8P8C,
+            positions=1,
+        )
+        front_port = FrontPort.objects.create(
+            device=patch_panel,
+            name='Patch Front Port',
+            type=PortTypeChoices.TYPE_8P8C,
+        )
+        PortMapping.objects.create(
+            device=patch_panel,
+            front_port=front_port,
+            front_port_position=1,
+            rear_port=rear_port,
+            rear_port_position=1,
+        )
+
+        Cable(
+            a_terminations=[connected_interface],
+            b_terminations=[connected_peer_interface],
+        ).save()
+        Cable(
+            a_terminations=[incomplete_path_interface],
+            b_terminations=[front_port],
+        ).save()
+
+        connected_interface.refresh_from_db()
+        connected_peer_interface.refresh_from_db()
+        incomplete_path_interface.refresh_from_db()
+
+        self.assertTrue(connected_interface._path.is_active)
+        self.assertTrue(connected_interface._path.is_complete)
+        self.assertTrue(connected_peer_interface._path.is_active)
+        self.assertTrue(connected_peer_interface._path.is_complete)
+
+        self.assertTrue(incomplete_path_interface._path.is_active)
+        self.assertFalse(incomplete_path_interface._path.is_complete)
+
+        queryset = self.queryset.filter(
+            pk__in=(
+                connected_interface.pk,
+                connected_peer_interface.pk,
+                incomplete_path_interface.pk,
+            )
+        )
+
+        params = {'cabled': 'true'}
+        self.assertSetEqual(
+            set(self.filterset(params, queryset).qs.values_list('pk', flat=True)),
+            {
+                connected_interface.pk,
+                connected_peer_interface.pk,
+                incomplete_path_interface.pk,
+            },
+        )
+
+        params = {'connected': 'true'}
+        self.assertSetEqual(
+            set(self.filterset(params, queryset).qs.values_list('pk', flat=True)),
+            {
+                connected_interface.pk,
+                connected_peer_interface.pk,
+            },
+        )
+
+        params = {'connected': 'false'}
+        self.assertSetEqual(
+            set(self.filterset(params, queryset).qs.values_list('pk', flat=True)),
+            {
+                incomplete_path_interface.pk,
+            },
+        )
+
     def test_kind(self):
         params = {'kind': 'physical'}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 7)
@@ -5018,7 +5991,7 @@ class InterfaceTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
 
 
-class FrontPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class FrontPortTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = FrontPort.objects.all()
     filterset = FrontPortFilterSet
     ignore_fields = ('cable_positions',)
@@ -5323,7 +6296,7 @@ class FrontPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class RearPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class RearPortTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = RearPort.objects.all()
     filterset = RearPortFilterSet
     ignore_fields = ('cable_positions',)
@@ -5613,7 +6586,7 @@ class RearPortTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilt
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class ModuleBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class ModuleBayTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = ModuleBay.objects.all()
     filterset = ModuleBayFilterSet
 
@@ -5716,11 +6689,11 @@ class ModuleBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         Device.objects.bulk_create(devices)
 
         module_bays = (
-            ModuleBay(device=devices[0], name='Module Bay 1', label='A', description='First'),
-            ModuleBay(device=devices[1], name='Module Bay 2', label='B', description='Second'),
-            ModuleBay(device=devices[2], name='Module Bay 3', label='C', description='Third'),
-            ModuleBay(device=devices[2], name='Module Bay 4', label='D', description='Fourth'),
-            ModuleBay(device=devices[2], name='Module Bay 5', label='E', description='Fifth'),
+            ModuleBay(device=devices[0], name='Module Bay 1', label='A', enabled=True, description='First'),
+            ModuleBay(device=devices[1], name='Module Bay 2', label='B', enabled=False, description='Second'),
+            ModuleBay(device=devices[2], name='Module Bay 3', label='C', enabled=True, description='Third'),
+            ModuleBay(device=devices[2], name='Module Bay 4', label='D', enabled=False, description='Fourth'),
+            ModuleBay(device=devices[2], name='Module Bay 5', label='E', enabled=True, description='Fifth'),
         )
         for module_bay in module_bays:
             module_bay.save()
@@ -5742,6 +6715,12 @@ class ModuleBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
 
     def test_label(self):
         params = {'label': ['A', 'B']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_enabled(self):
+        params = {'enabled': True}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
+        params = {'enabled': False}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
     def test_description(self):
@@ -5796,7 +6775,7 @@ class ModuleBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFilterSetTests):
+class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTestMixin, ChangeLoggedFilterSetTestMixin):
     queryset = DeviceBay.objects.all()
     filterset = DeviceBayFilterSet
 
@@ -5903,6 +6882,7 @@ class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
                 device=devices[0],
                 name='Device Bay 1',
                 label='A',
+                enabled=True,
                 description='First',
                 _site=devices[0].site,
                 _location=devices[0].location,
@@ -5912,6 +6892,7 @@ class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
                 device=devices[1],
                 name='Device Bay 2',
                 label='B',
+                enabled=False,
                 description='Second',
                 _site=devices[1].site,
                 _location=devices[1].location,
@@ -5921,6 +6902,7 @@ class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
                 device=devices[2],
                 name='Device Bay 3',
                 label='C',
+                enabled=True,
                 description='Third',
                 _site=devices[2].site,
                 _location=devices[2].location,
@@ -5936,6 +6918,12 @@ class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
     def test_label(self):
         params = {'label': ['A', 'B']}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_enabled(self):
+        params = {'enabled': True}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'enabled': False}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
     def test_description(self):
         params = {'description': ['First', 'Second']}
@@ -5984,7 +6972,7 @@ class DeviceBayTestCase(TestCase, DeviceComponentFilterSetTests, ChangeLoggedFil
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class InventoryItemTestCase(TestCase, ChangeLoggedFilterSetTests):
+class InventoryItemTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = InventoryItem.objects.all()
     filterset = InventoryItemFilterSet
 
@@ -6259,7 +7247,7 @@ class InventoryItemTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class InventoryItemRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
+class InventoryItemRoleTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = InventoryItemRole.objects.all()
     filterset = InventoryItemRoleFilterSet
 
@@ -6309,7 +7297,7 @@ class InventoryItemRoleTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class VirtualChassisTestCase(TestCase, ChangeLoggedFilterSetTests):
+class VirtualChassisTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = VirtualChassis.objects.all()
     filterset = VirtualChassisFilterSet
 
@@ -6409,7 +7397,33 @@ class VirtualChassisTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
+class CableBundleTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = CableBundle.objects.all()
+    filterset = CableBundleFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+        cable_bundles = (
+            CableBundle(name='Cable Bundle 1', description='foobar1'),
+            CableBundle(name='Cable Bundle 2', description='foobar2'),
+            CableBundle(name='Cable Bundle 3'),
+        )
+        CableBundle.objects.bulk_create(cable_bundles)
+
+    def test_q(self):
+        params = {'q': 'foobar1'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_name(self):
+        params = {'name': ['Cable Bundle 1', 'Cable Bundle 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['foobar1', 'foobar2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class CableTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = Cable.objects.all()
     filterset = CableFilterSet
 
@@ -6539,6 +7553,13 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
         circuit_type = CircuitType.objects.create(name='Circuit Type 1', slug='circuit-type-1')
         circuit = Circuit.objects.create(cid='Circuit 1', provider=provider, type=circuit_type)
         circuit_termination = CircuitTermination.objects.create(circuit=circuit, term_side='A', termination=sites[0])
+        circuit2 = Circuit.objects.create(cid='Circuit 2', provider=provider, type=circuit_type)
+        circuit_termination_a = CircuitTermination.objects.create(
+            circuit=circuit2, term_side='A', termination=sites[0]
+        )
+        circuit_termination_z = CircuitTermination.objects.create(
+            circuit=circuit2, term_side='Z', termination=locations[0]
+        )
 
         # Cables
         cables = (
@@ -6645,6 +7666,11 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
                 a_terminations=[circuit_termination],
                 label='Cable 14'
             ),
+            Cable(
+                a_terminations=[circuit_termination_a],
+                b_terminations=[circuit_termination_z],
+                label='Cable 15'
+            ),
         )
         for cable in cables:
             cable.save()
@@ -6669,13 +7695,13 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'type': [CableTypeChoices.TYPE_CAT3, CableTypeChoices.TYPE_CAT5E]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
         params = {'type__empty': 'true'}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 8)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 9)
         params = {'type__empty': 'false'}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 6)
 
     def test_status(self):
         params = {'status': [LinkStatusChoices.STATUS_CONNECTED]}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 11)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 12)
         params = {'status': [LinkStatusChoices.STATUS_PLANNED]}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 3)
 
@@ -6704,16 +7730,16 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
     def test_location(self):
         locations = Location.objects.all()[:2]
         params = {'location_id': [locations[0].pk, locations[1].pk]}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 11)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 12)
         params = {'location': [locations[0].name, locations[1].name]}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 11)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 12)
 
     def test_site(self):
         site = Site.objects.all()[:2]
         params = {'site_id': [site[0].pk, site[1].pk]}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 11)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 13)
         params = {'site': [site[0].slug, site[1].slug]}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 11)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 13)
 
     def test_tenant(self):
         tenant = Tenant.objects.all()[:2]
@@ -6741,7 +7767,7 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
         params = {'unterminated': True}
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 8)
         params = {'unterminated': False}
-        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 6)
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 7)
 
     def test_consoleport(self):
         params = {'consoleport_id': [ConsolePort.objects.first().pk]}
@@ -6776,7 +7802,97 @@ class CableTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
 
 
-class PowerPanelTestCase(TestCase, ChangeLoggedFilterSetTests):
+class CableTerminationTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = CableTermination.objects.all()
+    filterset = CableTerminationFilterSet
+    ignore_fields = ('connector', 'positions')
+    filter_name_map = {
+        'consoleport': 'consoleport_id',
+        'consoleserverport': 'consoleserverport_id',
+        'powerport': 'powerport_id',
+        'poweroutlet': 'poweroutlet_id',
+        'interface': 'interface_id',
+        'frontport': 'frontport_id',
+        'rearport': 'rearport_id',
+        'powerfeed': 'powerfeed_id',
+        'circuittermination': 'circuittermination_id',
+    }
+
+    @classmethod
+    def setUpTestData(cls):
+        site = Site.objects.create(name='Site 1', slug='site-1')
+        device = create_test_device('Device 1', site=site)
+
+        cls.interfaces = [
+            Interface(device=device, name=f'eth{i}', type=InterfaceTypeChoices.TYPE_1GE_FIXED)
+            for i in range(4)
+        ]
+        Interface.objects.bulk_create(cls.interfaces)
+
+        cls.consoleport = ConsolePort.objects.create(device=device, name='Console Port 1')
+        cls.consoleserverport = ConsoleServerPort.objects.create(device=device, name='Console Server Port 1')
+        cls.powerport = PowerPort.objects.create(device=device, name='Power Port 1')
+        cls.poweroutlet = PowerOutlet.objects.create(device=device, name='Power Outlet 1')
+        cls.rearport = RearPort.objects.create(device=device, name='Rear Port 1', type=PortTypeChoices.TYPE_8P8C)
+        cls.frontport = FrontPort.objects.create(device=device, name='Front Port 1', type=PortTypeChoices.TYPE_8P8C)
+        PortMapping.objects.create(device=device, front_port=cls.frontport, rear_port=cls.rearport)
+
+        power_panel = PowerPanel.objects.create(name='Power Panel 1', site=site)
+        cls.powerfeed = PowerFeed.objects.create(name='Power Feed 1', power_panel=power_panel)
+
+        provider = Provider.objects.create(name='Provider 1', slug='provider-1')
+        circuit_type = CircuitType.objects.create(name='Circuit Type 1', slug='circuit-type-1')
+        circuit = Circuit.objects.create(cid='Circuit 1', provider=provider, type=circuit_type)
+        cls.circuittermination = CircuitTermination.objects.create(
+            circuit=circuit, term_side='A', termination=site,
+        )
+
+        # Two bipartite interface cables (4 CableTerminations) plus one single-end cable per
+        # non-Interface component (8 CableTerminations).
+        cables = [
+            Cable(a_terminations=[cls.interfaces[0]], b_terminations=[cls.interfaces[1]], label='Cable 1'),
+            Cable(a_terminations=[cls.interfaces[2]], b_terminations=[cls.interfaces[3]], label='Cable 2'),
+        ]
+        for component in (
+            cls.consoleport, cls.consoleserverport, cls.powerport, cls.poweroutlet,
+            cls.rearport, cls.frontport, cls.powerfeed, cls.circuittermination,
+        ):
+            cables.append(Cable(a_terminations=[component], label=f'Cable for {component._meta.model_name}'))
+        for cable in cables:
+            cable.save()
+
+    def test_cable(self):
+        """Filter CableTerminations by cable ID."""
+        cables = Cable.objects.all()[:2]
+        params = {'cable_id': [cables[0].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'cable_id': [cables[0].pk, cables[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 4)
+
+    def test_termination_object_filters(self):
+        """Each <component>_id filter resolves to only matching terminations."""
+        cases = (
+            ('consoleport_id', ConsolePort, self.consoleport),
+            ('consoleserverport_id', ConsoleServerPort, self.consoleserverport),
+            ('powerport_id', PowerPort, self.powerport),
+            ('poweroutlet_id', PowerOutlet, self.poweroutlet),
+            ('interface_id', Interface, self.interfaces[0]),
+            ('frontport_id', FrontPort, self.frontport),
+            ('rearport_id', RearPort, self.rearport),
+            ('powerfeed_id', PowerFeed, self.powerfeed),
+            ('circuittermination_id', CircuitTermination, self.circuittermination),
+        )
+        for filter_name, model, obj in cases:
+            with self.subTest(filter_name=filter_name):
+                ct = ContentType.objects.get_for_model(model)
+                params = {filter_name: [obj.pk]}
+                results = self.filterset(params, self.queryset).qs
+                self.assertEqual(results.count(), 1)
+                self.assertEqual(results.first().termination_type, ct)
+                self.assertEqual(results.first().termination_id, obj.pk)
+
+
+class PowerPanelTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = PowerPanel.objects.all()
     filterset = PowerPanelFilterSet
 
@@ -6860,7 +7976,7 @@ class PowerPanelTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class PowerFeedTestCase(TestCase, ChangeLoggedFilterSetTests):
+class PowerFeedTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = PowerFeed.objects.all()
     filterset = PowerFeedFilterSet
     ignore_fields = ('cable_positions',)
@@ -7076,7 +8192,309 @@ class PowerFeedTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
 
 
-class VirtualDeviceContextTestCase(TestCase, ChangeLoggedFilterSetTests):
+class CoolingSourceTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = CoolingSource.objects.all()
+    filterset = CoolingSourceFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        regions = (
+            Region(name='Region 1', slug='region-1'),
+            Region(name='Region 2', slug='region-2'),
+            Region(name='Region 3', slug='region-3'),
+        )
+        for region in regions:
+            region.save()
+
+        groups = (
+            SiteGroup(name='Site Group 1', slug='site-group-1'),
+            SiteGroup(name='Site Group 2', slug='site-group-2'),
+            SiteGroup(name='Site Group 3', slug='site-group-3'),
+        )
+        for group in groups:
+            group.save()
+
+        sites = (
+            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+        )
+        Site.objects.bulk_create(sites)
+
+        locations = (
+            Location(name='Location 1', slug='location-1', site=sites[0]),
+            Location(name='Location 2', slug='location-2', site=sites[1]),
+            Location(name='Location 3', slug='location-3', site=sites[2]),
+        )
+        for location in locations:
+            location.save()
+
+        cooling_sources = (
+            CoolingSource(
+                name='Cooling Source 1',
+                site=sites[0],
+                location=locations[0],
+                type=CoolingSourceTypeChoices.TYPE_CHILLER,
+                status=CoolingSourceStatusChoices.STATUS_ACTIVE,
+                fluid_type=FluidTypeChoices.FLUID_WATER,
+                cooling_capacity=100,
+                description='foobar1'
+            ),
+            CoolingSource(
+                name='Cooling Source 2',
+                site=sites[1],
+                location=locations[1],
+                type=CoolingSourceTypeChoices.TYPE_COOLING_TOWER,
+                status=CoolingSourceStatusChoices.STATUS_PLANNED,
+                fluid_type=FluidTypeChoices.FLUID_WATER,
+                cooling_capacity=200,
+                description='foobar2'
+            ),
+            CoolingSource(
+                name='Cooling Source 3',
+                site=sites[2],
+                location=locations[2],
+                type=CoolingSourceTypeChoices.TYPE_DRY_COOLER,
+                status=CoolingSourceStatusChoices.STATUS_OFFLINE,
+                fluid_type=FluidTypeChoices.FLUID_DIELECTRIC,
+                cooling_capacity=300,
+                description='foobar3'
+            ),
+        )
+        for cooling_source in cooling_sources:
+            cooling_source.save()
+
+    def test_q(self):
+        params = {'q': 'foobar1'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_name(self):
+        params = {'name': ['Cooling Source 1', 'Cooling Source 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['foobar1', 'foobar2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_type(self):
+        params = {'type': [CoolingSourceTypeChoices.TYPE_CHILLER, CoolingSourceTypeChoices.TYPE_COOLING_TOWER]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_status(self):
+        params = {'status': [CoolingSourceStatusChoices.STATUS_ACTIVE, CoolingSourceStatusChoices.STATUS_PLANNED]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_fluid_type(self):
+        params = {'fluid_type': [FluidTypeChoices.FLUID_WATER]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_cooling_capacity(self):
+        params = {'cooling_capacity': [100, 200]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_region(self):
+        regions = Region.objects.all()[:2]
+        params = {'region_id': [regions[0].pk, regions[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'region': [regions[0].slug, regions[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site_group(self):
+        site_groups = SiteGroup.objects.all()[:2]
+        params = {'site_group_id': [site_groups[0].pk, site_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site_group': [site_groups[0].slug, site_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site(self):
+        sites = Site.objects.all()[:2]
+        params = {'site_id': [sites[0].pk, sites[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site': [sites[0].slug, sites[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_location(self):
+        locations = Location.objects.all()[:2]
+        params = {'location_id': [locations[0].pk, locations[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'location': [locations[0].slug, locations[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class CoolingFeedTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
+    queryset = CoolingFeed.objects.all()
+    filterset = CoolingFeedFilterSet
+
+    @classmethod
+    def setUpTestData(cls):
+
+        regions = (
+            Region(name='Region 1', slug='region-1'),
+            Region(name='Region 2', slug='region-2'),
+            Region(name='Region 3', slug='region-3'),
+        )
+        for region in regions:
+            region.save()
+
+        groups = (
+            SiteGroup(name='Site Group 1', slug='site-group-1'),
+            SiteGroup(name='Site Group 2', slug='site-group-2'),
+            SiteGroup(name='Site Group 3', slug='site-group-3'),
+        )
+        for group in groups:
+            group.save()
+
+        sites = (
+            Site(name='Site 1', slug='site-1', region=regions[0], group=groups[0]),
+            Site(name='Site 2', slug='site-2', region=regions[1], group=groups[1]),
+            Site(name='Site 3', slug='site-3', region=regions[2], group=groups[2]),
+        )
+        Site.objects.bulk_create(sites)
+
+        racks = (
+            Rack(name='Rack 1', site=sites[0]),
+            Rack(name='Rack 2', site=sites[1]),
+            Rack(name='Rack 3', site=sites[2]),
+        )
+        Rack.objects.bulk_create(racks)
+
+        tenant_groups = (
+            TenantGroup(name='Tenant group 1', slug='tenant-group-1'),
+            TenantGroup(name='Tenant group 2', slug='tenant-group-2'),
+            TenantGroup(name='Tenant group 3', slug='tenant-group-3'),
+        )
+        for tenantgroup in tenant_groups:
+            tenantgroup.save()
+
+        tenants = (
+            Tenant(name='Tenant 1', slug='tenant-1', group=tenant_groups[0]),
+            Tenant(name='Tenant 2', slug='tenant-2', group=tenant_groups[1]),
+            Tenant(name='Tenant 3', slug='tenant-3', group=tenant_groups[2]),
+        )
+        Tenant.objects.bulk_create(tenants)
+
+        cooling_sources = (
+            CoolingSource(name='Cooling Source 1', site=sites[0], type=CoolingSourceTypeChoices.TYPE_CHILLER),
+            CoolingSource(name='Cooling Source 2', site=sites[1], type=CoolingSourceTypeChoices.TYPE_CHILLER),
+            CoolingSource(name='Cooling Source 3', site=sites[2], type=CoolingSourceTypeChoices.TYPE_CHILLER),
+        )
+        CoolingSource.objects.bulk_create(cooling_sources)
+
+        cooling_feeds = (
+            CoolingFeed(
+                cooling_source=cooling_sources[0],
+                rack=racks[0],
+                name='Cooling Feed 1',
+                tenant=tenants[0],
+                status=CoolingFeedStatusChoices.STATUS_ACTIVE,
+                cooling_capacity=100,
+                max_flow=10,
+                max_flow_unit=FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE,
+                description='foobar1'
+            ),
+            CoolingFeed(
+                cooling_source=cooling_sources[1],
+                rack=racks[1],
+                name='Cooling Feed 2',
+                tenant=tenants[1],
+                status=CoolingFeedStatusChoices.STATUS_FAILED,
+                cooling_capacity=200,
+                max_flow=20,
+                max_flow_unit=FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE,
+                description='foobar2'
+            ),
+            CoolingFeed(
+                cooling_source=cooling_sources[2],
+                rack=racks[2],
+                name='Cooling Feed 3',
+                tenant=tenants[2],
+                status=CoolingFeedStatusChoices.STATUS_OFFLINE,
+                cooling_capacity=300,
+                max_flow=30,
+                max_flow_unit=FlowRateUnitChoices.UNIT_GALLONS_PER_MINUTE,
+                description='foobar3'
+            ),
+        )
+        # Use save() rather than bulk_create() so the normalized _abs_* fields are populated
+        for cooling_feed in cooling_feeds:
+            cooling_feed.save()
+
+    def test_q(self):
+        params = {'q': 'foobar1'}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 1)
+
+    def test_name(self):
+        params = {'name': ['Cooling Feed 1', 'Cooling Feed 2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_status(self):
+        params = {'status': [CoolingFeedStatusChoices.STATUS_ACTIVE, CoolingFeedStatusChoices.STATUS_FAILED]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_cooling_capacity(self):
+        params = {'cooling_capacity': [100, 200]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_max_flow(self):
+        params = {'max_flow': [10, 20]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_max_flow_unit(self):
+        params = {'max_flow_unit': [FlowRateUnitChoices.UNIT_LITERS_PER_MINUTE]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_description(self):
+        params = {'description': ['foobar1', 'foobar2']}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_region(self):
+        regions = Region.objects.all()[:2]
+        params = {'region_id': [regions[0].pk, regions[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'region': [regions[0].slug, regions[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site_group(self):
+        site_groups = SiteGroup.objects.all()[:2]
+        params = {'site_group_id': [site_groups[0].pk, site_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site_group': [site_groups[0].slug, site_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_site(self):
+        sites = Site.objects.all()[:2]
+        params = {'site_id': [sites[0].pk, sites[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'site': [sites[0].slug, sites[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_cooling_source_id(self):
+        cooling_sources = CoolingSource.objects.all()[:2]
+        params = {'cooling_source_id': [cooling_sources[0].pk, cooling_sources[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_rack_id(self):
+        racks = Rack.objects.all()[:2]
+        params = {'rack_id': [racks[0].pk, racks[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_tenant(self):
+        tenants = Tenant.objects.all()[:2]
+        params = {'tenant_id': [tenants[0].pk, tenants[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'tenant': [tenants[0].slug, tenants[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+    def test_tenant_group(self):
+        tenant_groups = TenantGroup.objects.all()[:2]
+        params = {'tenant_group_id': [tenant_groups[0].pk, tenant_groups[1].pk]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+        params = {'tenant_group': [tenant_groups[0].slug, tenant_groups[1].slug]}
+        self.assertEqual(self.filterset(params, self.queryset).qs.count(), 2)
+
+
+class VirtualDeviceContextTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = VirtualDeviceContext.objects.all()
     filterset = VirtualDeviceContextFilterSet
     ignore_fields = ('primary_ip4', 'primary_ip6')
@@ -7233,7 +8651,7 @@ class VirtualDeviceContextTestCase(TestCase, ChangeLoggedFilterSetTests):
         self.assertEqual(self.filterset(params, self.queryset).qs.count(), 0)
 
 
-class MACAddressTestCase(TestCase, ChangeLoggedFilterSetTests):
+class MACAddressTestCase(TestCase, ChangeLoggedFilterSetTestMixin):
     queryset = MACAddress.objects.all()
     filterset = MACAddressFilterSet
 

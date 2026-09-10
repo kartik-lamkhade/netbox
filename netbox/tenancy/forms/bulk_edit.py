@@ -8,7 +8,7 @@ from netbox.forms import (
     PrimaryModelBulkEditForm,
 )
 from utilities.forms import add_blank_choice
-from utilities.forms.fields import DynamicModelChoiceField, DynamicModelMultipleChoiceField
+from utilities.forms.fields import ChoiceField, DynamicModelChoiceField, DynamicModelMultipleChoiceField
 from utilities.forms.rendering import FieldSet
 
 from ..choices import ContactPriorityChoices
@@ -122,7 +122,7 @@ class ContactBulkEditForm(PrimaryModelBulkEditForm):
     )
 
     nullable_fields = (
-        'add_groups', 'remove_groups', 'title', 'phone', 'email', 'address', 'link', 'description', 'comments'
+        'title', 'phone', 'email', 'address', 'link', 'description', 'comments'
     )
 
 
@@ -137,7 +137,7 @@ class ContactAssignmentBulkEditForm(NetBoxModelBulkEditForm):
         queryset=ContactRole.objects.all(),
         required=False
     )
-    priority = forms.ChoiceField(
+    priority = ChoiceField(
         label=_('Priority'),
         choices=add_blank_choice(ContactPriorityChoices),
         required=False

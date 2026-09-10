@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Annotated
 import strawberry
 import strawberry_django
 from strawberry import ID
-from strawberry_django import BaseFilterLookup, FilterLookup
+from strawberry_django import BaseFilterLookup, FilterLookup, StrFilterLookup
 
 from core.graphql.filters import ContentTypeFilter
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from dcim.graphql.filters import LocationFilter, RegionFilter, SiteFilter, SiteGroupFilter
     from extras.graphql.filters import ConfigTemplateFilter
     from ipam.graphql.filters import VLANFilter, VLANTranslationPolicyFilter
-    from netbox.graphql.filter_lookups import IntegerLookup
+    from netbox.graphql.filter_lookups import FloatLookup, IntegerLookup
 
     from .filters import *
 
@@ -66,9 +66,9 @@ class ComponentModelFilterMixin:
     )
     device: Annotated['DeviceFilter', strawberry.lazy('dcim.graphql.filters')] | None = strawberry_django.filter_field()
     device_id: ID | None = strawberry_django.filter_field()
-    name: FilterLookup[str] | None = strawberry_django.filter_field()
-    label: FilterLookup[str] | None = strawberry_django.filter_field()
-    description: FilterLookup[str] | None = strawberry_django.filter_field()
+    name: StrFilterLookup | None = strawberry_django.filter_field()
+    label: StrFilterLookup | None = strawberry_django.filter_field()
+    description: StrFilterLookup | None = strawberry_django.filter_field()
 
 
 @dataclass
@@ -96,9 +96,9 @@ class ComponentTemplateFilterMixin:
         strawberry_django.filter_field()
     )
     device_type_id: ID | None = strawberry_django.filter_field()
-    name: FilterLookup[str] | None = strawberry_django.filter_field()
-    label: FilterLookup[str] | None = strawberry_django.filter_field()
-    description: FilterLookup[str] | None = strawberry_django.filter_field()
+    name: StrFilterLookup | None = strawberry_django.filter_field()
+    label: StrFilterLookup | None = strawberry_django.filter_field()
+    description: StrFilterLookup | None = strawberry_django.filter_field()
 
 
 @dataclass
@@ -175,5 +175,11 @@ class RackFilterMixin:
         strawberry_django.filter_field()
     )
     max_weight: Annotated['IntegerLookup', strawberry.lazy('netbox.graphql.filter_lookups')] | None = (
+        strawberry_django.filter_field()
+    )
+    cooling_capability: (
+        BaseFilterLookup[Annotated['RackCoolingCapabilityEnum', strawberry.lazy('dcim.graphql.enums')]] | None
+    ) = strawberry_django.filter_field()
+    cooling_capacity: Annotated['FloatLookup', strawberry.lazy('netbox.graphql.filter_lookups')] | None = (
         strawberry_django.filter_field()
     )

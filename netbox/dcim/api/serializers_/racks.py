@@ -1,9 +1,11 @@
 from django.utils.translation import gettext as _
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from dcim.choices import *
 from dcim.constants import *
-from dcim.models import Rack, RackReservation, RackRole, RackType
+from dcim.models import Rack, RackGroup, RackReservation, RackRole, RackType
 from netbox.api.fields import ChoiceField, RelatedObjectCountField
 from netbox.api.serializers import OrganizationalModelSerializer, PrimaryModelSerializer
 from netbox.choices import *
@@ -16,11 +18,26 @@ from .sites import LocationSerializer, SiteSerializer
 
 __all__ = (
     'RackElevationDetailFilterSerializer',
+    'RackGroupSerializer',
     'RackReservationSerializer',
     'RackRoleSerializer',
     'RackSerializer',
     'RackTypeSerializer',
 )
+
+
+class RackGroupSerializer(OrganizationalModelSerializer):
+
+    # Related object counts
+    rack_count = RelatedObjectCountField('racks')
+
+    class Meta:
+        model = RackGroup
+        fields = [
+            'id', 'url', 'display_url', 'display', 'name', 'slug', 'description', 'owner', 'comments', 'tags',
+            'custom_fields', 'created', 'last_updated', 'rack_count',
+        ]
+        brief_fields = ('id', 'url', 'display', 'name', 'slug', 'description', 'rack_count')
 
 
 class RackRoleSerializer(OrganizationalModelSerializer):
@@ -60,6 +77,12 @@ class RackBaseSerializer(PrimaryModelSerializer):
         required=False,
         allow_null=True
     )
+    cooling_capability = ChoiceField(
+        choices=RackCoolingCapabilityChoices,
+        allow_blank=True,
+        required=False,
+        allow_null=True
+    )
 
 
 class RackTypeSerializer(RackBaseSerializer):
@@ -71,8 +94,9 @@ class RackTypeSerializer(RackBaseSerializer):
         fields = [
             'id', 'url', 'display_url', 'display', 'manufacturer', 'model', 'slug', 'description', 'form_factor',
             'width', 'u_height', 'starting_unit', 'desc_units', 'outer_width', 'outer_height', 'outer_depth',
-            'outer_unit', 'weight', 'max_weight', 'weight_unit', 'mounting_depth', 'description', 'owner', 'comments',
-            'tags', 'custom_fields', 'created', 'last_updated', 'rack_count',
+            'outer_unit', 'weight', 'max_weight', 'weight_unit', 'mounting_depth', 'cooling_capability',
+            'cooling_capacity', 'description', 'owner', 'comments', 'tags', 'custom_fields', 'created', 'last_updated',
+            'rack_count',
         ]
         brief_fields = ('id', 'url', 'display', 'manufacturer', 'model', 'slug', 'description', 'rack_count')
 
@@ -86,6 +110,11 @@ class RackSerializer(RackBaseSerializer):
         required=False,
         allow_null=True,
         default=None
+    )
+    group = RackGroupSerializer(
+        nested=True,
+        required=False,
+        allow_null=True
     )
     tenant = TenantSerializer(
         nested=True,
@@ -127,11 +156,12 @@ class RackSerializer(RackBaseSerializer):
     class Meta:
         model = Rack
         fields = [
-            'id', 'url', 'display_url', 'display', 'name', 'facility_id', 'site', 'location', 'tenant', 'status',
-            'role', 'serial', 'asset_tag', 'rack_type', 'form_factor', 'width', 'u_height', 'starting_unit', 'weight',
-            'max_weight', 'weight_unit', 'desc_units', 'outer_width', 'outer_height', 'outer_depth', 'outer_unit',
-            'mounting_depth', 'airflow', 'description', 'owner', 'comments', 'tags', 'custom_fields', 'created',
-            'last_updated', 'device_count', 'powerfeed_count',
+            'id', 'url', 'display_url', 'display', 'name', 'facility_id', 'site', 'location', 'group', 'tenant',
+            'status', 'role', 'serial', 'asset_tag', 'rack_type', 'form_factor', 'width', 'u_height', 'starting_unit',
+            'weight', 'max_weight', 'weight_unit', 'desc_units', 'outer_width', 'outer_height', 'outer_depth',
+            'outer_unit', 'mounting_depth', 'airflow', 'cooling_capability', 'cooling_capacity',
+            'description', 'owner', 'comments', 'tags', 'custom_fields', 'created', 'last_updated', 'device_count',
+            'powerfeed_count',
         ]
         brief_fields = ('id', 'url', 'display', 'name', 'description', 'device_count')
 
@@ -153,11 +183,17 @@ class RackReservationSerializer(PrimaryModelSerializer):
         allow_null=True,
     )
 
+    unit_count = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.INT32)
+    def get_unit_count(self, obj):
+        return len(obj.units)
+
     class Meta:
         model = RackReservation
         fields = [
-            'id', 'url', 'display_url', 'display', 'rack', 'units', 'status', 'created', 'last_updated', 'user',
-            'tenant', 'description', 'owner', 'comments', 'tags', 'custom_fields',
+            'id', 'url', 'display_url', 'display', 'rack', 'units', 'unit_count', 'status', 'created', 'last_updated',
+            'user', 'tenant', 'description', 'owner', 'comments', 'tags', 'custom_fields',
         ]
         brief_fields = ('id', 'url', 'display', 'status', 'user', 'description', 'units')
 
